@@ -1,0 +1,50 @@
+# KrakenSDR Git Ignore File
+
+# Large binary files
+*.deb
+*.tar.gz
+*.zip
+
+# Python virtual environment
+kraken_env/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Data files and logs
+kraken-logs/
+*.log
+*.json
+!filebeat_kraken_simple.yml
+
+# Build directories
+build/
+dist/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large external repositories (keep as untracked)
+heimdall_daq_fw/
+krakensdr_doa/
+librtlsdr/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Data summaries (generated files)
+kraken_data_summary_*.txt
+
+# Alternative filebeat configs (keep main one)
+filebeat_kraken.yml
