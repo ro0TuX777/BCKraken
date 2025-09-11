@@ -1,0 +1,122 @@
+output.elasticsearch:
+  hosts: ["https://172.18.18.20:9200"]
+  username: "filebeat-dragonos"
+  password: "KUX4hkxjwp9qhu2wjx"
+  ssl.verification_mode: none
+
+filebeat.inputs:
+  # Direction of Arrival (DoA) logs
+  - type: filestream
+    id: kraken-sdr-doa
+    paths:
+      - /home/bc_test/Downloads/kraken-sdr/kraken-logs/*doa*.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+    processors:
+      - add_fields:
+          target: ''
+          fields:
+            data_stream.type: logs
+            data_stream.dataset: kraken-sdr-doa
+            data_stream.namespace: default
+    index: "kraken-sdr-doa-default"
+
+  # Spectrum Analysis logs
+  - type: filestream
+    id: kraken-sdr-spectrum
+    paths:
+      - /home/bc_test/Downloads/kraken-sdr/kraken-logs/*spectrum*.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+    processors:
+      - add_fields:
+          target: ''
+          fields:
+            data_stream.type: logs
+            data_stream.dataset: kraken-sdr-spectrum
+            data_stream.namespace: default
+    index: "kraken-sdr-spectrum-default"
+
+  # Passive Radar logs
+  - type: filestream
+    id: kraken-sdr-radar
+    paths:
+      - /home/bc_test/Downloads/kraken-sdr/kraken-logs/*radar*.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+    processors:
+      - add_fields:
+          target: ''
+          fields:
+            data_stream.type: logs
+            data_stream.dataset: kraken-sdr-radar
+            data_stream.namespace: default
+    index: "kraken-sdr-radar-default"
+
+  # System Status logs
+  - type: filestream
+    id: kraken-sdr-status
+    paths:
+      - /home/bc_test/Downloads/kraken-sdr/kraken-logs/*status*.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+    processors:
+      - add_fields:
+          target: ''
+          fields:
+            data_stream.type: logs
+            data_stream.dataset: kraken-sdr-status
+            data_stream.namespace: default
+    index: "kraken-sdr-status-default"
+
+  # Beamforming logs
+  - type: filestream
+    id: kraken-sdr-beamforming
+    paths:
+      - /home/bc_test/Downloads/kraken-sdr/kraken-logs/*beamforming*.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+    processors:
+      - add_fields:
+          target: ''
+          fields:
+            data_stream.type: logs
+            data_stream.dataset: kraken-sdr-beamforming
+            data_stream.namespace: default
+    index: "kraken-sdr-beamforming-default"
+
+  # TDOA Triangulation logs
+  - type: filestream
+    id: kraken-sdr-tdoa
+    paths:
+      - /home/bc_test/Downloads/kraken-sdr/kraken-logs/*tdoa*.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+    processors:
+      - add_fields:
+          target: ''
+          fields:
+            data_stream.type: logs
+            data_stream.dataset: kraken-sdr-tdoa
+            data_stream.namespace: default
+    index: "kraken-sdr-tdoa-default"
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644

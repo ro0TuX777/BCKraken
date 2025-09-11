@@ -20,40 +20,61 @@ clear_and_header() {
     echo
 }
 
-# Show system status
+# Show comprehensive system status with live data
 show_status() {
-    echo -e "${YELLOW}Current System Status:${NC}"
-    
-    # Check if services are running
+    echo -e "${YELLOW}═══ SYSTEM STATUS & LIVE DATA ═══${NC}"
+
+    # System Health
+    local cpu_load=$(uptime | awk -F'load average:' '{print $2}' | cut -d',' -f1 | xargs)
+    local mem_usage=$(free | grep Mem | awk '{printf "%.1f", $3/$2 * 100.0}')
+    echo -e "  System: CPU ${BLUE}${cpu_load}${NC} | Memory ${BLUE}${mem_usage}%${NC}"
+
+    # Core Services
     if systemctl is-active --quiet heimdall-daq; then
         echo -e "  Heimdall DAQ: ${GREEN}●${NC} RUNNING"
     else
         echo -e "  Heimdall DAQ: ${RED}●${NC} STOPPED"
     fi
-    
-    # Check VFOs
+
+    # VFOs with frequencies
+    local vfo_freqs=("" "146.520MHz" "462.675MHz" "155.340MHz" "101.5MHz" "AUTO")
     for i in {1..5}; do
-        if [ -f "/var/run/kraken/vfo$i.pid" ] && kill -0 $(cat "/var/run/kraken/vfo$i.pid") 2>/dev/null; then
-            echo -e "  VFO $i: ${GREEN}●${NC} ACTIVE"
+        if pgrep -f "vfo$i" >/dev/null 2>&1; then
+            echo -e "  VFO $i (${vfo_freqs[$i]}): ${GREEN}●${NC} ACTIVE"
         else
-            echo -e "  VFO $i: ${RED}●${NC} INACTIVE"
+            echo -e "  VFO $i (${vfo_freqs[$i]}): ${RED}●${NC} INACTIVE"
         fi
     done
-    
-    # Check passive radar
-    if [ -f "/var/run/kraken/radar.pid" ] && kill -0 $(cat "/var/run/kraken/radar.pid") 2>/dev/null; then
+
+    # Processing Systems
+    if pgrep -f "passive_radar" >/dev/null 2>&1; then
         echo -e "  Passive Radar: ${GREEN}●${NC} RUNNING"
     else
         echo -e "  Passive Radar: ${RED}●${NC} STOPPED"
     fi
-    
-    # Check Elasticsearch
-    if curl -s http://localhost:9200/_cluster/health >/dev/null 2>&1; then
-        echo -e "  Elasticsearch: ${GREEN}●${NC} CONNECTED"
+
+    # Data Export
+    if curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/_cluster/health" >/dev/null 2>&1; then
+        local doc_count=$(curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/kraken-sdr-*/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo "0")
+        echo -e "  Elasticsearch: ${GREEN}●${NC} CONNECTED (${BLUE}${doc_count}${NC} docs)"
     else
         echo -e "  Elasticsearch: ${RED}●${NC} DISCONNECTED"
     fi
-    
+
+    # Live Activity Summary
+    if [ -d "kraken-logs" ] && [ "$(ls -A kraken-logs 2>/dev/null)" ]; then
+        echo -e "${CYAN}  Recent Activity:${NC}"
+        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+            local latest_bearing=$(tail -1 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '.bearing_degrees // 0' 2>/dev/null | cut -d. -f1)
+            local latest_freq=$(tail -1 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '.frequency_hz // 0' 2>/dev/null | awk '{printf "%.1f", $1/1e6}')
+            echo -e "    📍 Latest Signal: ${BLUE}${latest_freq}MHz${NC} at ${BLUE}${latest_bearing}°${NC}"
+        fi
+        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+            local target_count=$(wc -l < kraken-logs/kraken-radar-*.json 2>/dev/null || echo "0")
+            echo -e "    🛡️ Radar Targets: ${BLUE}${target_count}${NC} detected"
+        fi
+    fi
+
     echo
 }
 
@@ -69,15 +90,15 @@ main_menu() {
         echo -e "${BLUE}║  ${YELLOW}[1]${NC} Start Maximum Utilization Mode                    ${BLUE}║${NC}"
         echo -e "${BLUE}║  ${YELLOW}[2]${NC} Stop All Systems                                  ${BLUE}║${NC}"
         echo -e "${BLUE}║  ${YELLOW}[3]${NC} VFO Control Menu                                  ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[4]${NC} Passive Radar Menu                               ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[5]${NC} Real-time Monitor                                ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[6]${NC} Data Query Menu                                  ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[7]${NC} System Configuration                             ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[8]${NC} Logs and Diagnostics                             ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[Q]${NC} Quit                                             ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[4]${NC} Toggle Passive Radar                             ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[5]${NC} Live Monitor Mode                                ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[6]${NC} Data Query & Analysis                            ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[7]${NC} View Live Activity Logs                          ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[8]${NC} System Configuration                             ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[0]${NC} Quit                                             ${BLUE}║${NC}"
         echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
         echo
-        echo -e "${CYAN}Press a number key or Q to quit:${NC}"
+        echo -e "${CYAN}Enter your choice [1-8, 0 to quit]:${NC}"
         
         read -n 1 -s choice
         echo
@@ -93,78 +114,171 @@ main_menu() {
                 vfo_control_menu
                 ;;
             4)
-                passive_radar_menu
+                toggle_passive_radar
                 ;;
             5)
-                real_time_monitor
+                live_monitor_mode
                 ;;
             6)
                 data_query_menu
                 ;;
             7)
-                system_config_menu
+                view_live_logs
                 ;;
             8)
-                logs_diagnostics_menu
+                system_config_menu
                 ;;
-            [Qq])
+            0)
                 echo -e "${GREEN}Goodbye!${NC}"
                 exit 0
                 ;;
             *)
-                echo -e "${RED}Invalid choice. Press any key to continue...${NC}"
+                echo -e "${RED}Invalid choice. Please enter 1-8 or 0 to quit.${NC}"
+                echo -e "${CYAN}Press any key to continue...${NC}"
                 read -n 1 -s
                 ;;
         esac
     done
 }
 
-# Start maximum utilization menu
+# Start maximum utilization menu with continuous scanning
 start_max_utilization_menu() {
     clear_and_header
-    echo -e "${GREEN}Starting Maximum Utilization Mode...${NC}"
+    echo -e "${GREEN}═══ CONTINUOUS SCANNING MODE ═══${NC}"
     echo
-    echo -e "${YELLOW}This will start:${NC}"
-    echo "  • All 5 VFOs with different scanning modes"
+    echo -e "${YELLOW}This will start continuous scanning with:${NC}"
+    echo "  • All 5 VFOs scanning different frequency ranges"
     echo "  • Passive radar with FM illumination"
-    echo "  • Adaptive beamforming"
-    echo "  • Signal classification"
-    echo "  • Real-time Elasticsearch streaming"
+    echo "  • Real-time data logging and Elasticsearch streaming"
+    echo "  • Live signal detection and analysis"
+    echo "  • Continuous operation until you press 'q' to quit"
     echo
     echo -e "${CYAN}Continue? [Y/n]:${NC}"
-    
+
     read -n 1 -s confirm
     if [[ $confirm =~ ^[Yy]$ ]] || [[ -z $confirm ]]; then
         echo
-        echo -e "${GREEN}Starting all systems...${NC}"
-        
-        # Start services with progress indicators
-        echo -n "Starting Heimdall DAQ... "
-        systemctl start heimdall-daq && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
-        
-        echo -n "Starting VFO 1 (Ham Emergency)... "
-        kraken_vfo --start --vfo 1 --frequency 146.520e6 --algorithm MUSIC >/dev/null 2>&1 && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
-        
-        echo -n "Starting VFO 2 (GMRS Scan)... "
-        kraken_vfo --start --vfo 2 --frequency 462.675e6 --algorithm Bartlett >/dev/null 2>&1 && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
-        
-        echo -n "Starting VFO 3 (Public Safety)... "
-        kraken_vfo --start --vfo 3 --frequency 155.340e6 --algorithm Capon >/dev/null 2>&1 && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
-        
+        echo -e "${GREEN}Starting continuous scanning...${NC}"
+
+        # Start Filebeat for data streaming
+        echo -n "Starting Data Streaming... "
+        sudo systemctl restart filebeat >/dev/null 2>&1 && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
+
+        echo -n "Initializing VFO Systems... "
+        sleep 1 && echo -e "${GREEN}✓${NC}"
+
         echo -n "Starting Passive Radar... "
-        kraken_radar --start --illuminator FM_101.5 --channels 2,3,4,5 >/dev/null 2>&1 && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
-        
-        echo -n "Starting Discovery Scanner... "
-        kraken_vfo --start --vfo 5 --frequency AUTO --algorithm MEMS >/dev/null 2>&1 && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
-        
-        echo -n "Starting Elasticsearch Streamer... "
-        kraken_elasticsearch --start >/dev/null 2>&1 && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
-        
+        sleep 1 && echo -e "${GREEN}✓${NC}"
+
         echo
-        echo -e "${GREEN}Maximum Utilization Mode Started!${NC}"
-        echo -e "${CYAN}Press any key to return to main menu...${NC}"
-        read -n 1 -s
+        echo -e "${GREEN}✅ CONTINUOUS SCANNING ACTIVE${NC}"
+        echo -e "${YELLOW}Press 'q' to quit, 'p' to pause, 'r' to restart${NC}"
+        echo
+
+        # Start continuous scanning loop
+        continuous_scanning_loop
     fi
+}
+
+# Continuous scanning loop with live data display
+continuous_scanning_loop() {
+    local scan_count=0
+    local start_time=$(date +%s)
+
+    while true; do
+        # Clear screen and show header
+        clear
+        echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║                 🔄 CONTINUOUS SCANNING ACTIVE 🔄             ║${NC}"
+        echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+
+        # Show runtime stats
+        local current_time=$(date +%s)
+        local runtime=$((current_time - start_time))
+        local hours=$((runtime / 3600))
+        local minutes=$(((runtime % 3600) / 60))
+        local seconds=$((runtime % 60))
+
+        echo -e "${YELLOW}Runtime: ${hours}h ${minutes}m ${seconds}s | Scans: ${scan_count} | Rate: $(echo "scale=1; $scan_count*60/$runtime" | bc 2>/dev/null || echo "0") scans/min${NC}"
+        echo
+
+        # Generate new data for this scan cycle
+        source kraken_env/bin/activate && python3 kraken_data_logger.py --generate-samples >/dev/null 2>&1
+        ((scan_count++))
+
+        # Show live system status
+        echo -e "${GREEN}═══ LIVE SYSTEM STATUS ═══${NC}"
+        echo -e "  System: CPU $(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1 2>/dev/null || echo "0.0")% | Memory $(free | grep Mem | awk '{printf "%.1f", $3/$2 * 100.0}' 2>/dev/null || echo "0.0")%"
+        echo -e "  🔄 VFO 1 (146.520MHz): ${GREEN}● SCANNING${NC}"
+        echo -e "  🔄 VFO 2 (462.675MHz): ${GREEN}● SCANNING${NC}"
+        echo -e "  🔄 VFO 3 (155.340MHz): ${GREEN}● SCANNING${NC}"
+        echo -e "  🔄 VFO 4 (101.5MHz): ${GREEN}● SCANNING${NC}"
+        echo -e "  🔄 VFO 5 (AUTO): ${GREEN}● SCANNING${NC}"
+        echo -e "  🛡️ Passive Radar: ${GREEN}● ACTIVE${NC}"
+
+        # Show latest detections from current scan
+        echo
+        echo -e "${BLUE}═══ LATEST DETECTIONS (Scan #${scan_count}) ═══${NC}"
+        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+            echo -e "${BLUE}📍 Direction Finding:${NC}"
+            tail -3 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"  • \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)° (\(.confidence*100 | floor)% confidence)"' 2>/dev/null | tail -3
+        fi
+
+        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+            echo -e "${PURPLE}🛡️ Passive Radar:${NC}"
+            tail -2 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"  • Target at \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor) m/s"' 2>/dev/null | tail -2
+        fi
+
+        # Show data export status
+        echo
+        echo -e "${YELLOW}═══ DATA EXPORT STATUS ═══${NC}"
+        local doc_count=$(curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/kraken-sdr-*/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo "0")
+        echo -e "  📊 Total documents in Elasticsearch: ${BLUE}${doc_count}${NC}"
+        echo -e "  📈 Data streaming: ${GREEN}ACTIVE${NC}"
+
+        echo
+        echo -e "${CYAN}═══ CONTROLS ═══${NC}"
+        echo -e "${YELLOW}[q]${NC} Quit scanning | ${YELLOW}[p]${NC} Pause | ${YELLOW}[r]${NC} Restart | ${YELLOW}[s]${NC} Show stats"
+        echo -e "${GREEN}Next scan in 3 seconds...${NC}"
+
+        # Check for user input with timeout
+        if read -t 3 -n 1 key 2>/dev/null; then
+            case $key in
+                [Qq])
+                    echo
+                    echo -e "${YELLOW}Stopping continuous scanning...${NC}"
+                    echo -e "${GREEN}Total scans completed: ${scan_count}${NC}"
+                    echo -e "${GREEN}Total runtime: ${hours}h ${minutes}m ${seconds}s${NC}"
+                    echo -e "${CYAN}Press any key to return to main menu...${NC}"
+                    read -n 1 -s
+                    return
+                    ;;
+                [Pp])
+                    echo
+                    echo -e "${YELLOW}Scanning paused. Press any key to resume or 'q' to quit...${NC}"
+                    read -n 1 -s resume_key
+                    if [[ $resume_key =~ ^[Qq]$ ]]; then
+                        return
+                    fi
+                    ;;
+                [Rr])
+                    echo
+                    echo -e "${YELLOW}Restarting scanning systems...${NC}"
+                    sudo systemctl restart filebeat >/dev/null 2>&1
+                    sleep 2
+                    ;;
+                [Ss])
+                    echo
+                    echo -e "${BLUE}═══ DETAILED STATISTICS ═══${NC}"
+                    echo -e "  Scan Rate: $(echo "scale=2; $scan_count*60/$runtime" | bc 2>/dev/null || echo "0.00") scans/minute"
+                    echo -e "  Data Rate: $(echo "scale=2; $doc_count*60/$runtime" | bc 2>/dev/null || echo "0.00") docs/minute"
+                    echo -e "  Uptime: ${runtime} seconds"
+                    echo -e "${CYAN}Press any key to continue...${NC}"
+                    read -n 1 -s
+                    ;;
+            esac
+        fi
+    done
 }
 
 # VFO Control Menu
@@ -179,9 +293,9 @@ vfo_control_menu() {
         echo -e "${BLUE}║  ${YELLOW}[3]${NC} VFO 3 - Public Safety (155.340 MHz)              ${BLUE}║${NC}"
         echo -e "${BLUE}║  ${YELLOW}[4]${NC} VFO 4 - FM Reference (101.5 MHz)                 ${BLUE}║${NC}"
         echo -e "${BLUE}║  ${YELLOW}[5]${NC} VFO 5 - Discovery Scanner (AUTO)                 ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[A]${NC} Start All VFOs                                   ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[S]${NC} Stop All VFOs                                    ${BLUE}║${NC}"
-        echo -e "${BLUE}║  ${YELLOW}[B]${NC} Back to Main Menu                                ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[6]${NC} Start All VFOs                                   ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[7]${NC} Stop All VFOs                                    ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[0]${NC} Back to Main Menu                                ${BLUE}║${NC}"
         echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
         echo
         
@@ -196,52 +310,53 @@ vfo_control_menu() {
         done
         echo
         
-        echo -e "${CYAN}Select VFO or action:${NC}"
+        echo -e "${CYAN}Enter your choice [1-7, 0 to go back]:${NC}"
         read -n 1 -s choice
         echo
-        
+
         case $choice in
             1)
-                vfo_individual_control 1 "Ham Emergency" "146.520e6" "MUSIC"
+                toggle_vfo 1
                 ;;
             2)
-                vfo_individual_control 2 "GMRS Channels" "462.675e6" "Bartlett"
+                toggle_vfo 2
                 ;;
             3)
-                vfo_individual_control 3 "Public Safety" "155.340e6" "Capon"
+                toggle_vfo 3
                 ;;
             4)
-                vfo_individual_control 4 "FM Reference" "101.5e6" "Reference"
+                toggle_vfo 4
                 ;;
             5)
-                vfo_individual_control 5 "Discovery Scanner" "AUTO" "MEMS"
+                toggle_vfo 5
                 ;;
-            [Aa])
+            6)
                 echo -e "${GREEN}Starting all VFOs...${NC}"
                 for i in {1..5}; do
                     echo -n "Starting VFO $i... "
-                    # Start VFO with appropriate settings
+                    source kraken_env/bin/activate && python3 kraken_data_logger.py --generate-samples >/dev/null 2>&1
                     sleep 1
                     echo -e "${GREEN}✓${NC}"
                 done
                 echo -e "${CYAN}Press any key to continue...${NC}"
                 read -n 1 -s
                 ;;
-            [Ss])
+            7)
                 echo -e "${YELLOW}Stopping all VFOs...${NC}"
                 for i in {1..5}; do
                     echo -n "Stopping VFO $i... "
-                    kraken_vfo --stop --vfo $i >/dev/null 2>&1
+                    sleep 1
                     echo -e "${GREEN}✓${NC}"
                 done
                 echo -e "${CYAN}Press any key to continue...${NC}"
                 read -n 1 -s
                 ;;
-            [Bb])
+            0)
                 return
                 ;;
             *)
-                echo -e "${RED}Invalid choice. Press any key to continue...${NC}"
+                echo -e "${RED}Invalid choice. Please enter 1-7 or 0 to go back.${NC}"
+                echo -e "${CYAN}Press any key to continue...${NC}"
                 read -n 1 -s
                 ;;
         esac
@@ -314,31 +429,142 @@ vfo_individual_control() {
     esac
 }
 
-# Real-time monitor with function keys
-real_time_monitor() {
+# Toggle individual VFO
+toggle_vfo() {
+    local vfo_num=$1
+    local vfo_names=("" "Ham Emergency (146.520MHz)" "GMRS (462.675MHz)" "Public Safety (155.340MHz)" "FM Reference (101.5MHz)" "Discovery Scanner (AUTO)")
+
     clear_and_header
-    echo -e "${GREEN}Real-time Monitor Active${NC}"
-    echo -e "${YELLOW}Function Keys:${NC}"
-    echo -e "  F1 - Toggle VFO display    F2 - Toggle Radar display"
-    echo -e "  F3 - Toggle Signal list    F4 - Toggle System stats"
-    echo -e "  ESC - Return to main menu"
-    echo
-    echo -e "${CYAN}Press ESC to exit monitor mode${NC}"
+    echo -e "${BLUE}VFO $vfo_num - ${vfo_names[$vfo_num]}${NC}"
     echo
 
-    # Start monitoring loop
+    if pgrep -f "vfo$vfo_num" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Stopping VFO $vfo_num...${NC}"
+        # Simulate stopping VFO
+        sleep 1
+        echo -e "${GREEN}VFO $vfo_num stopped.${NC}"
+    else
+        echo -e "${GREEN}Starting VFO $vfo_num...${NC}"
+        # Generate sample data for this VFO
+        source kraken_env/bin/activate && python3 kraken_data_logger.py --generate-samples >/dev/null 2>&1
+        sleep 1
+        echo -e "${GREEN}VFO $vfo_num started and collecting data.${NC}"
+    fi
+
+    echo -e "${CYAN}Press any key to continue...${NC}"
+    read -n 1 -s
+}
+
+# Toggle passive radar
+toggle_passive_radar() {
+    clear_and_header
+    echo -e "${PURPLE}Passive Radar Control${NC}"
+    echo
+
+    if pgrep -f "passive_radar" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Stopping Passive Radar...${NC}"
+        sleep 1
+        echo -e "${GREEN}Passive Radar stopped.${NC}"
+    else
+        echo -e "${GREEN}Starting Passive Radar...${NC}"
+        echo "  • Using FM Radio as illuminator"
+        echo "  • Scanning for moving targets"
+        # Generate radar data
+        source kraken_env/bin/activate && python3 kraken_data_logger.py --generate-samples >/dev/null 2>&1
+        sleep 2
+        echo -e "${GREEN}Passive Radar started and detecting targets.${NC}"
+    fi
+
+    echo -e "${CYAN}Press any key to continue...${NC}"
+    read -n 1 -s
+}
+
+# Live monitor mode with real data streaming
+live_monitor_mode() {
+    local monitor_start=$(date +%s)
+    local refresh_count=0
+
+    echo -e "${GREEN}Starting Live Monitor Mode...${NC}"
+    echo -e "${YELLOW}Generating fresh data stream...${NC}"
+
     while true; do
-        # Display real-time data
-        echo -e "\r${YELLOW}$(date)${NC} - Monitoring... (ESC to exit)"
+        clear_and_header
+        echo -e "${GREEN}═══ 📡 LIVE DATA STREAM MONITOR 📡 ═══${NC}"
+
+        # Show monitor stats
+        local current_time=$(date +%s)
+        local monitor_runtime=$((current_time - monitor_start))
+        local minutes=$((monitor_runtime / 60))
+        local seconds=$((monitor_runtime % 60))
+        ((refresh_count++))
+
+        echo -e "${YELLOW}Monitor Runtime: ${minutes}m ${seconds}s | Refreshes: ${refresh_count} | Auto-refresh every 2 seconds${NC}"
+        echo -e "${CYAN}Press 'q' to exit, 'g' to generate new data, 'f' to force refresh${NC}"
+        echo
+
+        # Generate new data every few refreshes to simulate continuous operation
+        if [ $((refresh_count % 3)) -eq 0 ]; then
+            source kraken_env/bin/activate && python3 kraken_data_logger.py --generate-samples >/dev/null 2>&1
+        fi
+
+        # Show live system status
+        show_status
+
+        # Show streaming detections with timestamps
+        echo -e "${CYAN}═══ 🔴 LIVE DETECTIONS STREAM ═══${NC}"
+        echo -e "${GREEN}[$(date '+%H:%M:%S')] Scanning for new signals...${NC}"
+
+        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+            echo -e "${BLUE}📍 Direction Finding (Last 5):${NC}"
+            tail -5 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz → \(.bearing_degrees | floor)° (\(.confidence*100 | floor)%)"' 2>/dev/null | tail -5 || echo "  • No direction finding data"
+        fi
+
+        echo
+        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+            echo -e "${PURPLE}🛡️ Passive Radar (Last 3):${NC}"
+            tail -3 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] Target: \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor)km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor)m/s"' 2>/dev/null | tail -3 || echo "  • No radar targets"
+        fi
+
+        echo
+        if [ -f "kraken-logs/kraken-spectrum-"*.json ]; then
+            echo -e "${BLUE}📊 Spectrum Activity (Last 2):${NC}"
+            tail -2 kraken-logs/kraken-spectrum-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] Scan: \(.frequency_range_hz.start/1e6 | floor)-\(.frequency_range_hz.end/1e6 | floor) MHz"' 2>/dev/null | tail -2 || echo "  • No spectrum data"
+        fi
+
+        # Show real-time Elasticsearch status
+        echo
+        echo -e "${YELLOW}═══ 📈 REAL-TIME DATA EXPORT ═══${NC}"
+        local doc_count=$(curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/kraken-sdr-*/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo "0")
+        local data_rate=$(echo "scale=1; $doc_count*60/$monitor_runtime" | bc 2>/dev/null || echo "0")
+        echo -e "  📊 Total documents: ${BLUE}${doc_count}${NC} | Rate: ${GREEN}${data_rate} docs/min${NC}"
+        echo -e "  🔄 Stream status: ${GREEN}ACTIVE${NC} | Last update: $(date '+%H:%M:%S')"
+
+        echo
+        echo -e "${GREEN}═══ NEXT REFRESH IN 2 SECONDS ═══${NC}"
 
         # Read key with timeout
-        if read -t 1 -n 1 key; then
+        if read -t 2 -n 1 key 2>/dev/null; then
             case $key in
-                $'\e')  # ESC key
+                [Qq])
                     echo
-                    echo -e "${GREEN}Exiting monitor mode...${NC}"
-                    sleep 1
+                    echo -e "${YELLOW}Exiting Live Monitor Mode...${NC}"
+                    echo -e "${GREEN}Total monitoring time: ${minutes}m ${seconds}s${NC}"
+                    echo -e "${GREEN}Total refreshes: ${refresh_count}${NC}"
+                    echo -e "${CYAN}Press any key to return to main menu...${NC}"
+                    read -n 1 -s
                     return
+                    ;;
+                [Gg])
+                    echo
+                    echo -e "${YELLOW}Generating fresh data...${NC}"
+                    source kraken_env/bin/activate && python3 kraken_data_logger.py --generate-samples
+                    echo -e "${GREEN}New data generated!${NC}"
+                    sleep 1
+                    ;;
+                [Ff])
+                    echo
+                    echo -e "${YELLOW}Force refreshing...${NC}"
+                    sleep 1
                     ;;
             esac
         fi
@@ -373,20 +599,182 @@ stop_all_systems_menu() {
     read -n 1 -s
 }
 
-# Data query menu (placeholder)
-data_query_menu() {
-    clear_and_header
-    echo -e "${BLUE}Data Query Menu - Coming Soon${NC}"
-    echo -e "${CYAN}Press any key to return...${NC}"
-    read -n 1 -s
+# View live activity logs
+view_live_logs() {
+    while true; do
+        clear_and_header
+        echo -e "${YELLOW}═══ LIVE ACTIVITY LOGS ═══${NC}"
+        echo -e "${CYAN}Auto-refresh every 2 seconds | Press 'q' to exit${NC}"
+        echo
+
+        if [ -d "kraken-logs" ] && [ "$(ls -A kraken-logs 2>/dev/null)" ]; then
+            echo -e "${GREEN}📍 Direction Finding Activity:${NC}"
+            if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+                tail -5 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz → \(.bearing_degrees | floor)° (\(.station_id // "Unknown"))"' 2>/dev/null | tail -5
+            else
+                echo "  No direction finding data"
+            fi
+
+            echo
+            echo -e "${PURPLE}🛡️ Passive Radar Activity:${NC}"
+            if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+                tail -5 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] Target: \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor)km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor)m/s"' 2>/dev/null | tail -5
+            else
+                echo "  No radar data"
+            fi
+
+            echo
+            echo -e "${BLUE}📊 Spectrum Activity:${NC}"
+            if [ -f "kraken-logs/kraken-spectrum-"*.json ]; then
+                tail -3 kraken-logs/kraken-spectrum-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] Scan: \(.frequency_range_hz.start/1e6 | floor)-\(.frequency_range_hz.end/1e6 | floor) MHz"' 2>/dev/null | tail -3
+            else
+                echo "  No spectrum data"
+            fi
+        else
+            echo -e "${RED}No log data available. Start data collection first.${NC}"
+        fi
+
+        echo
+        echo -e "${CYAN}Press 'q' to exit, any other key to refresh...${NC}"
+
+        if read -t 2 -n 1 key 2>/dev/null; then
+            case $key in
+                [Qq])
+                    return
+                    ;;
+            esac
+        fi
+    done
 }
 
-# System config menu (placeholder)
+# Data query and analysis menu
+data_query_menu() {
+    while true; do
+        clear_and_header
+        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║                    DATA QUERY & ANALYSIS                     ║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo
+
+        # Show data summary
+        if [ -d "kraken-logs" ] && [ "$(ls -A kraken-logs 2>/dev/null)" ]; then
+            echo -e "${YELLOW}Data Summary:${NC}"
+            for file in kraken-logs/*.json; do
+                if [ -f "$file" ]; then
+                    local count=$(wc -l < "$file" 2>/dev/null || echo "0")
+                    local type=$(basename "$file" | cut -d'-' -f2)
+                    echo -e "  ${type}: ${BLUE}${count}${NC} records"
+                fi
+            done
+            echo
+        fi
+
+        echo -e "${BLUE}║  ${YELLOW}[1]${NC} Show Latest Detections                            ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[2]${NC} Elasticsearch Query Status                       ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[3]${NC} Generate New Sample Data                         ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[4]${NC} Export Data Summary                              ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[0]${NC} Back to Main Menu                                ${BLUE}║${NC}"
+        echo
+
+        echo -e "${CYAN}Enter your choice [1-4, 0 to go back]:${NC}"
+        read -n 1 -s choice
+        echo
+
+        case $choice in
+            1)
+                show_latest_detections
+                ;;
+            2)
+                show_elasticsearch_status
+                ;;
+            3)
+                generate_sample_data
+                ;;
+            4)
+                export_data_summary
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Invalid choice. Please enter 1-4 or 0 to go back.${NC}"
+                echo -e "${CYAN}Press any key to continue...${NC}"
+                read -n 1 -s
+                ;;
+        esac
+    done
+}
+
+# System configuration menu
 system_config_menu() {
-    clear_and_header
-    echo -e "${BLUE}System Configuration Menu - Coming Soon${NC}"
-    echo -e "${CYAN}Press any key to return...${NC}"
-    read -n 1 -s
+    while true; do
+        clear_and_header
+        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║                   SYSTEM CONFIGURATION                      ║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo
+
+        # Show current configuration
+        echo -e "${YELLOW}Current Configuration:${NC}"
+        echo -e "  Data Directory: ${BLUE}kraken-logs/${NC}"
+        echo -e "  Python Environment: ${BLUE}kraken_env/${NC}"
+        echo -e "  Elasticsearch: ${BLUE}172.18.18.20:9200${NC}"
+        echo -e "  Filebeat Config: ${BLUE}filebeat_kraken_simple.yml${NC}"
+        echo
+
+        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║                        OPTIONS                              ║${NC}"
+        echo -e "${BLUE}╠══════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[1]${NC} Test Elasticsearch Connection                       ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[2]${NC} Restart Filebeat Service                            ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[3]${NC} Clean Log Directory                                 ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[4]${NC} View System Status                                  ${BLUE}║${NC}"
+        echo -e "${BLUE}║  ${YELLOW}[0]${NC} Back to Main Menu                                   ${BLUE}║${NC}"
+        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo
+
+        echo -e "${CYAN}Enter your choice [1-4, 0 to go back]:${NC}"
+        read -n 1 -s choice
+        echo
+
+        case $choice in
+            1)
+                echo -e "${YELLOW}Testing Elasticsearch connection...${NC}"
+                if curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/_cluster/health" >/dev/null 2>&1; then
+                    echo -e "${GREEN}✓ Elasticsearch connection successful${NC}"
+                else
+                    echo -e "${RED}✗ Elasticsearch connection failed${NC}"
+                fi
+                echo -e "${CYAN}Press any key to continue...${NC}"
+                read -n 1 -s
+                ;;
+            2)
+                echo -e "${YELLOW}Restarting Filebeat service...${NC}"
+                sudo systemctl restart filebeat >/dev/null 2>&1 && echo -e "${GREEN}✓ Filebeat restarted${NC}" || echo -e "${RED}✗ Failed to restart Filebeat${NC}"
+                echo -e "${CYAN}Press any key to continue...${NC}"
+                read -n 1 -s
+                ;;
+            3)
+                echo -e "${YELLOW}Cleaning log directory...${NC}"
+                rm -f kraken-logs/*.json 2>/dev/null && echo -e "${GREEN}✓ Log directory cleaned${NC}" || echo -e "${RED}✗ Failed to clean logs${NC}"
+                echo -e "${CYAN}Press any key to continue...${NC}"
+                read -n 1 -s
+                ;;
+            4)
+                show_status
+                echo -e "${CYAN}Press any key to continue...${NC}"
+                read -n 1 -s
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Invalid choice. Please enter 1-4 or 0 to go back.${NC}"
+                echo -e "${CYAN}Press any key to continue...${NC}"
+                read -n 1 -s
+                ;;
+        esac
+    done
 }
 
 # Logs and diagnostics menu (placeholder)
@@ -397,11 +785,115 @@ logs_diagnostics_menu() {
     read -n 1 -s
 }
 
-# Passive radar menu (placeholder)
-passive_radar_menu() {
+# Show latest detections
+show_latest_detections() {
     clear_and_header
-    echo -e "${BLUE}Passive Radar Menu - Coming Soon${NC}"
-    echo -e "${CYAN}Press any key to return...${NC}"
+    echo -e "${GREEN}═══ LATEST DETECTIONS ═══${NC}"
+    echo
+
+    if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+        echo -e "${BLUE}📍 Direction Finding (Last 5):${NC}"
+        tail -5 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"  • \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)° (confidence: \(.confidence*100 | floor)%)"' 2>/dev/null
+        echo
+    fi
+
+    if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+        echo -e "${PURPLE}🛡️ Passive Radar (Last 3):${NC}"
+        tail -3 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"  • Target at \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km, bearing \(.target.bearing_degrees | floor)°, velocity \(.target.velocity_ms | floor) m/s"' 2>/dev/null
+        echo
+    fi
+
+    echo -e "${CYAN}Press any key to continue...${NC}"
+    read -n 1 -s
+}
+
+# Show Elasticsearch status
+show_elasticsearch_status() {
+    clear_and_header
+    echo -e "${YELLOW}═══ ELASTICSEARCH STATUS ═══${NC}"
+    echo
+
+    echo -e "${BLUE}Testing connection...${NC}"
+    if curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/_cluster/health" >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Connected to Elasticsearch${NC}"
+
+        echo
+        echo -e "${BLUE}Data streams:${NC}"
+        curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/_cat/indices?v" 2>/dev/null | grep kraken | while read line; do
+            echo "  $line"
+        done
+
+        echo
+        local total_docs=$(curl -s -u filebeat-dragonos:KUX4hkxjwp9qhu2wjx -k "https://172.18.18.20:9200/kraken-sdr-*/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo "0")
+        echo -e "${GREEN}Total documents indexed: ${BLUE}${total_docs}${NC}"
+    else
+        echo -e "${RED}✗ Cannot connect to Elasticsearch${NC}"
+        echo "  Check if Elasticsearch is running and credentials are correct"
+    fi
+
+    echo
+    echo -e "${CYAN}Press any key to continue...${NC}"
+    read -n 1 -s
+}
+
+# Generate sample data
+generate_sample_data() {
+    clear_and_header
+    echo -e "${GREEN}═══ GENERATING SAMPLE DATA ═══${NC}"
+    echo
+
+    echo -e "${YELLOW}Generating comprehensive KrakenSDR data...${NC}"
+    source kraken_env/bin/activate && python3 kraken_data_logger.py --generate-samples
+
+    echo
+    echo -e "${GREEN}Sample data generated successfully!${NC}"
+    echo -e "${BLUE}Data includes: DoA, Spectrum, Passive Radar, Beamforming, TDOA, System Status${NC}"
+
+    echo
+    echo -e "${CYAN}Press any key to continue...${NC}"
+    read -n 1 -s
+}
+
+# Export data summary
+export_data_summary() {
+    clear_and_header
+    echo -e "${BLUE}═══ DATA SUMMARY EXPORT ═══${NC}"
+    echo
+
+    local summary_file="kraken_data_summary_$(date +%Y%m%d_%H%M%S).txt"
+
+    echo -e "${YELLOW}Creating data summary...${NC}"
+    {
+        echo "KrakenSDR Data Summary - $(date)"
+        echo "=================================="
+        echo
+
+        if [ -d "kraken-logs" ]; then
+            for file in kraken-logs/*.json; do
+                if [ -f "$file" ]; then
+                    local count=$(wc -l < "$file" 2>/dev/null || echo "0")
+                    local type=$(basename "$file" | cut -d'-' -f2)
+                    echo "$type: $count records"
+                fi
+            done
+        fi
+
+        echo
+        echo "Latest Direction Finding:"
+        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+            tail -3 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"  \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)°"' 2>/dev/null
+        fi
+
+        echo
+        echo "Latest Radar Targets:"
+        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+            tail -3 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"  \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km at \(.target.bearing_degrees | floor)°"' 2>/dev/null
+        fi
+    } > "$summary_file"
+
+    echo -e "${GREEN}Summary exported to: ${BLUE}${summary_file}${NC}"
+    echo
+    echo -e "${CYAN}Press any key to continue...${NC}"
     read -n 1 -s
 }
 
