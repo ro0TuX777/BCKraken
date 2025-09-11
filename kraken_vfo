@@ -1,0 +1,390 @@
+#!/bin/bash
+# KrakenSDR VFO Control Script
+# Location: /usr/local/bin/kraken_vfo
+
+KRAKEN_PID="/var/run/kraken"
+KRAKEN_LOG="/var/log/kraken"
+KRAKEN_CONFIG="/etc/kraken"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Default VFO configurations
+declare -A VFO_DEFAULTS
+VFO_DEFAULTS[1]="146520000:MUSIC:DF_CONTINUOUS:Ham Emergency"
+VFO_DEFAULTS[2]="462675000:Bartlett:DF_SCAN:GMRS Channels"
+VFO_DEFAULTS[3]="155340000:Capon:DF_PRIORITY:Public Safety"
+VFO_DEFAULTS[4]="101500000:Reference:PASSIVE_RADAR_REF:FM Reference"
+VFO_DEFAULTS[5]="AUTO:MEMS:DISCOVERY:Discovery Scanner"
+
+# Log function
+log_vfo() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - VFO: $1" >> $KRAKEN_LOG/vfo_control.log
+}
+
+# Check if VFO is running
+is_vfo_running() {
+    local vfo_num=$1
+    local pidfile="$KRAKEN_PID/vfo$vfo_num.pid"
+    if [ -f "$pidfile" ]; then
+        local pid=$(cat "$pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        else
+            rm -f "$pidfile"
+            return 1
+        fi
+    fi
+    return 1
+}
+
+# Get VFO configuration
+get_vfo_config() {
+    local vfo_num=$1
+    local config="${VFO_DEFAULTS[$vfo_num]}"
+    if [ -n "$config" ]; then
+        echo "$config"
+    else
+        echo "146520000:MUSIC:DF_CONTINUOUS:Unknown VFO"
+    fi
+}
+
+# Start VFO
+start_vfo() {
+    local vfo_num=$1
+    local frequency=${2:-""}
+    local algorithm=${3:-""}
+    local mode=${4:-""}
+    
+    # Get default config if parameters not provided
+    if [ -z "$frequency" ] || [ -z "$algorithm" ] || [ -z "$mode" ]; then
+        local config=$(get_vfo_config $vfo_num)
+        IFS=':' read -r def_freq def_alg def_mode def_desc <<< "$config"
+        frequency=${frequency:-$def_freq}
+        algorithm=${algorithm:-$def_alg}
+        mode=${mode:-$def_mode}
+    fi
+    
+    echo -e "${GREEN}Starting VFO $vfo_num...${NC}"
+    echo -e "  Frequency: ${BLUE}$frequency${NC}"
+    echo -e "  Algorithm: ${BLUE}$algorithm${NC}"
+    echo -e "  Mode: ${BLUE}$mode${NC}"
+    
+    # Check if already running
+    if is_vfo_running $vfo_num; then
+        echo -e "${YELLOW}VFO $vfo_num is already running${NC}"
+        return 1
+    fi
+    
+    # Create PID directory if it doesn't exist
+    mkdir -p $KRAKEN_PID
+    
+    # Start the VFO process
+    if python3 /home/pi/krakensdr_doa/scripts/vfo_control.py \
+        --vfo $vfo_num \
+        --frequency $frequency \
+        --algorithm $algorithm \
+        --mode $mode \
+        --daemon \
+        --pidfile $KRAKEN_PID/vfo$vfo_num.pid \
+        --logfile $KRAKEN_LOG/vfo$vfo_num.log 2>/dev/null; then
+        echo -e "${GREEN}VFO $vfo_num started successfully${NC}"
+        log_vfo "VFO $vfo_num started - Freq: $frequency, Alg: $algorithm, Mode: $mode"
+        return 0
+    else
+        echo -e "${RED}Failed to start VFO $vfo_num${NC}"
+        log_vfo "Failed to start VFO $vfo_num"
+        return 1
+    fi
+}
+
+# Stop VFO
+stop_vfo() {
+    local vfo_num=$1
+    
+    echo -e "${YELLOW}Stopping VFO $vfo_num...${NC}"
+    
+    if ! is_vfo_running $vfo_num; then
+        echo -e "${YELLOW}VFO $vfo_num is not running${NC}"
+        return 1
+    fi
+    
+    local pidfile="$KRAKEN_PID/vfo$vfo_num.pid"
+    local pid=$(cat "$pidfile")
+    
+    # Send TERM signal first
+    if kill -TERM "$pid" 2>/dev/null; then
+        # Wait for graceful shutdown
+        local count=0
+        while kill -0 "$pid" 2>/dev/null && [ $count -lt 10 ]; do
+            sleep 1
+            ((count++))
+        done
+        
+        # Force kill if still running
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null
+        fi
+        
+        rm -f "$pidfile"
+        echo -e "${GREEN}VFO $vfo_num stopped successfully${NC}"
+        log_vfo "VFO $vfo_num stopped"
+        return 0
+    else
+        echo -e "${RED}Failed to stop VFO $vfo_num${NC}"
+        rm -f "$pidfile"
+        return 1
+    fi
+}
+
+# Show VFO status
+show_vfo_status() {
+    local vfo_num=$1
+    
+    if [ -n "$vfo_num" ]; then
+        # Show specific VFO status
+        local config=$(get_vfo_config $vfo_num)
+        IFS=':' read -r frequency algorithm mode description <<< "$config"
+        
+        echo -e "${BLUE}VFO $vfo_num Status - $description${NC}"
+        echo "================================"
+        
+        if is_vfo_running $vfo_num; then
+            echo -e "Status: ${GREEN}●${NC} RUNNING"
+            local pid=$(cat "$KRAKEN_PID/vfo$vfo_num.pid")
+            echo -e "PID: ${BLUE}$pid${NC}"
+            
+            # Show process info
+            if ps -p $pid -o pid,ppid,pcpu,pmem,etime,cmd --no-headers 2>/dev/null; then
+                echo
+            fi
+        else
+            echo -e "Status: ${RED}●${NC} STOPPED"
+        fi
+        
+        echo -e "Default Frequency: ${BLUE}$frequency${NC}"
+        echo -e "Default Algorithm: ${BLUE}$algorithm${NC}"
+        echo -e "Default Mode: ${BLUE}$mode${NC}"
+        
+        # Show recent log entries
+        if [ -f "$KRAKEN_LOG/vfo$vfo_num.log" ]; then
+            echo
+            echo -e "${YELLOW}Recent Activity:${NC}"
+            tail -5 "$KRAKEN_LOG/vfo$vfo_num.log" 2>/dev/null | while read line; do
+                echo "  $line"
+            done
+        fi
+    else
+        # Show all VFOs status
+        echo -e "${BLUE}All VFO Status${NC}"
+        echo "=============="
+        
+        for i in {1..5}; do
+            local config=$(get_vfo_config $i)
+            IFS=':' read -r frequency algorithm mode description <<< "$config"
+            
+            if is_vfo_running $i; then
+                echo -e "VFO $i ($description): ${GREEN}●${NC} RUNNING"
+            else
+                echo -e "VFO $i ($description): ${RED}●${NC} STOPPED"
+            fi
+        done
+    fi
+}
+
+# Test VFO functionality
+test_vfo() {
+    local vfo_num=$1
+    
+    echo -e "${BLUE}Testing VFO $vfo_num...${NC}"
+    
+    # Start VFO with test parameters
+    if start_vfo $vfo_num; then
+        echo -e "${GREEN}VFO $vfo_num started for testing${NC}"
+        sleep 5
+        
+        # Check if still running
+        if is_vfo_running $vfo_num; then
+            echo -e "${GREEN}VFO $vfo_num test: PASSED${NC}"
+            stop_vfo $vfo_num
+            return 0
+        else
+            echo -e "${RED}VFO $vfo_num test: FAILED (crashed)${NC}"
+            return 1
+        fi
+    else
+        echo -e "${RED}VFO $vfo_num test: FAILED (startup)${NC}"
+        return 1
+    fi
+}
+
+# Test all VFOs
+test_all_vfos() {
+    echo -e "${BLUE}Testing all VFOs...${NC}"
+    echo
+    
+    local passed=0
+    local failed=0
+    
+    for i in {1..5}; do
+        if test_vfo $i; then
+            ((passed++))
+        else
+            ((failed++))
+        fi
+        echo
+    done
+    
+    echo -e "${BLUE}Test Results:${NC}"
+    echo -e "  Passed: ${GREEN}$passed${NC}"
+    echo -e "  Failed: ${RED}$failed${NC}"
+    
+    if [ $failed -eq 0 ]; then
+        echo -e "${GREEN}All VFO tests passed!${NC}"
+        return 0
+    else
+        echo -e "${RED}Some VFO tests failed${NC}"
+        return 1
+    fi
+}
+
+# Show usage
+show_usage() {
+    echo "Usage: $0 [OPTIONS] COMMAND"
+    echo
+    echo "Commands:"
+    echo "  --start --vfo N [--frequency FREQ] [--algorithm ALG] [--mode MODE]"
+    echo "  --stop --vfo N"
+    echo "  --restart --vfo N"
+    echo "  --status [--vfo N]"
+    echo "  --test [--vfo N]"
+    echo "  --test-all"
+    echo
+    echo "Options:"
+    echo "  --vfo N           VFO number (1-5)"
+    echo "  --frequency FREQ  Frequency in Hz (e.g., 146520000)"
+    echo "  --algorithm ALG   Algorithm (MUSIC, Bartlett, Capon, MEMS, Reference)"
+    echo "  --mode MODE       Mode (DF_CONTINUOUS, DF_SCAN, DF_PRIORITY, PASSIVE_RADAR_REF, DISCOVERY)"
+    echo
+    echo "Examples:"
+    echo "  $0 --start --vfo 1"
+    echo "  $0 --start --vfo 1 --frequency 146520000 --algorithm MUSIC"
+    echo "  $0 --stop --vfo 1"
+    echo "  $0 --status"
+    echo "  $0 --status --vfo 1"
+    echo "  $0 --test-all"
+}
+
+# Parse command line arguments
+VFO_NUM=""
+FREQUENCY=""
+ALGORITHM=""
+MODE=""
+COMMAND=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --start)
+            COMMAND="start"
+            shift
+            ;;
+        --stop)
+            COMMAND="stop"
+            shift
+            ;;
+        --restart)
+            COMMAND="restart"
+            shift
+            ;;
+        --status)
+            COMMAND="status"
+            shift
+            ;;
+        --test)
+            COMMAND="test"
+            shift
+            ;;
+        --test-all)
+            COMMAND="test-all"
+            shift
+            ;;
+        --vfo)
+            VFO_NUM="$2"
+            shift 2
+            ;;
+        --frequency)
+            FREQUENCY="$2"
+            shift 2
+            ;;
+        --algorithm)
+            ALGORITHM="$2"
+            shift 2
+            ;;
+        --mode)
+            MODE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+# Execute command
+case "$COMMAND" in
+    start)
+        if [ -z "$VFO_NUM" ]; then
+            echo -e "${RED}VFO number required for start command${NC}"
+            show_usage
+            exit 1
+        fi
+        start_vfo "$VFO_NUM" "$FREQUENCY" "$ALGORITHM" "$MODE"
+        ;;
+    stop)
+        if [ -z "$VFO_NUM" ]; then
+            echo -e "${RED}VFO number required for stop command${NC}"
+            show_usage
+            exit 1
+        fi
+        stop_vfo "$VFO_NUM"
+        ;;
+    restart)
+        if [ -z "$VFO_NUM" ]; then
+            echo -e "${RED}VFO number required for restart command${NC}"
+            show_usage
+            exit 1
+        fi
+        stop_vfo "$VFO_NUM"
+        sleep 2
+        start_vfo "$VFO_NUM" "$FREQUENCY" "$ALGORITHM" "$MODE"
+        ;;
+    status)
+        show_vfo_status "$VFO_NUM"
+        ;;
+    test)
+        if [ -z "$VFO_NUM" ]; then
+            echo -e "${RED}VFO number required for test command${NC}"
+            show_usage
+            exit 1
+        fi
+        test_vfo "$VFO_NUM"
+        ;;
+    test-all)
+        test_all_vfos
+        ;;
+    *)
+        echo -e "${RED}No command specified${NC}"
+        show_usage
+        exit 1
+        ;;
+esac

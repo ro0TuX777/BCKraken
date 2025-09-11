@@ -1,0 +1,108 @@
+#!/bin/bash
+# Function key interface for KrakenSDR
+
+# Enable function key detection
+setup_function_keys() {
+    # Set terminal to detect function keys
+    stty -echo
+    tput smkx  # Enable keypad mode
+}
+
+# Cleanup on exit
+cleanup() {
+    tput rmkx  # Disable keypad mode
+    stty echo
+    clear
+    echo "KrakenSDR Hotkey Interface Closed"
+}
+
+trap cleanup EXIT
+
+setup_function_keys
+
+echo "KrakenSDR Function Key Interface"
+echo "================================"
+echo "F1  - Start Max Utilization"
+echo "F2  - Stop All Systems"
+echo "F3  - Toggle VFO 1"
+echo "F4  - Toggle VFO 2"
+echo "F5  - Toggle VFO 3"
+echo "F6  - Toggle Passive Radar"
+echo "F7  - System Status"
+echo "F8  - Real-time Monitor"
+echo "F9  - Emergency Stop"
+echo "F10 - Restart All"
+echo "ESC - Exit"
+echo
+echo "Press function keys to control KrakenSDR..."
+
+while true; do
+    read -n 1 key
+    
+    # Handle escape sequences for function keys
+    if [[ $key == $'\e' ]]; then
+        read -n 2 -t 0.1 key
+        case $key in
+            'OP') # F1
+                echo "F1: Starting Maximum Utilization..."
+                kraken_max_util start
+                ;;
+            'OQ') # F2
+                echo "F2: Stopping All Systems..."
+                kraken_max_util stop
+                ;;
+            'OR') # F3
+                echo "F3: Toggling VFO 1..."
+                if [ -f "/var/run/kraken/vfo1.pid" ] && kill -0 $(cat "/var/run/kraken/vfo1.pid") 2>/dev/null; then
+                    kraken_vfo --stop --vfo 1
+                else
+                    kraken_vfo --start --vfo 1 --frequency 146.520e6 --algorithm MUSIC
+                fi
+                ;;
+            'OS') # F4
+                echo "F4: Toggling VFO 2..."
+                if [ -f "/var/run/kraken/vfo2.pid" ] && kill -0 $(cat "/var/run/kraken/vfo2.pid") 2>/dev/null; then
+                    kraken_vfo --stop --vfo 2
+                else
+                    kraken_vfo --start --vfo 2 --frequency 462.675e6 --algorithm Bartlett
+                fi
+                ;;
+            '[15~') # F5
+                echo "F5: Toggling VFO 3..."
+                if [ -f "/var/run/kraken/vfo3.pid" ] && kill -0 $(cat "/var/run/kraken/vfo3.pid") 2>/dev/null; then
+                    kraken_vfo --stop --vfo 3
+                else
+                    kraken_vfo --start --vfo 3 --frequency 155.340e6 --algorithm Capon
+                fi
+                ;;
+            '[17~') # F6
+                echo "F6: Toggling Passive Radar..."
+                if [ -f "/var/run/kraken/radar.pid" ] && kill -0 $(cat "/var/run/kraken/radar.pid") 2>/dev/null; then
+                    kraken_radar --stop
+                else
+                    kraken_radar --start --illuminator FM_101.5 --channels 2,3,4,5
+                fi
+                ;;
+            '[18~') # F7
+                echo "F7: System Status"
+                kraken_status --detailed
+                ;;
+            '[19~') # F8
+                echo "F8: Real-time Monitor"
+                kraken_monitor --mode overview &
+                ;;
+            '[20~') # F9
+                echo "F9: EMERGENCY STOP!"
+                kraken_max_util stop
+                ;;
+            '[21~') # F10
+                echo "F10: Restarting All Systems..."
+                kraken_max_util restart
+                ;;
+            '') # ESC alone
+                echo "Exiting..."
+                exit 0
+                ;;
+        esac
+    fi
+done

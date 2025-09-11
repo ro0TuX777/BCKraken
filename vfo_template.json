@@ -1,0 +1,27 @@
+{
+  "vfo_id": 1,
+  "frequency": 146520000,
+  "bandwidth": 25000,
+  "mode": "DF_CONTINUOUS",
+  "algorithm": "MUSIC",
+  "gain": 20,
+  "squelch": -80,
+  "processing": {
+    "fft_size": 1024,
+    "overlap": 0.5,
+    "window": "hann",
+    "integration_time": 1.0
+  },
+  "direction_finding": {
+    "array_manifold": "/etc/kraken/array_manifold.json",
+    "calibration": "/etc/kraken/calibration.json",
+    "search_range": [0, 360],
+    "search_step": 1.0,
+    "confidence_threshold": 0.5
+  },
+  "output": {
+    "bearing_update_rate": 10.0,
+    "data_logging": true,
+    "real_time_stream": true
+  }
+}

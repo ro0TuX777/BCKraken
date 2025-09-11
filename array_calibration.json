@@ -1,0 +1,57 @@
+{
+  "array_geometry": {
+    "type": "UCA",
+    "elements": 5,
+    "radius": 0.5,
+    "center": [0.0, 0.0],
+    "element_positions": [
+      {"x": 0.5, "y": 0.0, "z": 0.0},
+      {"x": 0.154, "y": 0.476, "z": 0.0},
+      {"x": -0.405, "y": 0.294, "z": 0.0},
+      {"x": -0.405, "y": -0.294, "z": 0.0},
+      {"x": 0.154, "y": -0.476, "z": 0.0}
+    ]
+  },
+  "calibration_data": {
+    "frequency_range": {
+      "start": 24000000,
+      "end": 1766000000,
+      "step": 1000000
+    },
+    "phase_corrections": {
+      "element_1": [0.0, 0.1, 0.2, 0.15, 0.05],
+      "element_2": [0.05, 0.0, 0.1, 0.2, 0.1],
+      "element_3": [0.1, 0.05, 0.0, 0.1, 0.15],
+      "element_4": [0.15, 0.1, 0.05, 0.0, 0.1],
+      "element_5": [0.2, 0.15, 0.1, 0.05, 0.0]
+    },
+    "amplitude_corrections": {
+      "element_1": [1.0, 0.98, 0.99, 1.01, 1.02],
+      "element_2": [1.01, 1.0, 0.99, 0.98, 1.01],
+      "element_3": [0.99, 1.01, 1.0, 0.99, 0.98],
+      "element_4": [0.98, 0.99, 1.01, 1.0, 0.99],
+      "element_5": [1.02, 1.01, 0.98, 0.99, 1.0]
+    }
+  },
+  "manifold_vectors": {
+    "azimuth_range": [0, 360],
+    "azimuth_step": 1.0,
+    "elevation_range": [0, 90],
+    "elevation_step": 5.0,
+    "data_file": "/etc/kraken/array_manifold.dat"
+  },
+  "calibration_metadata": {
+    "calibration_date": "2024-01-01T00:00:00Z",
+    "calibration_method": "MUSIC_SCAN",
+    "reference_frequency": 146520000,
+    "temperature": 20.0,
+    "humidity": 50.0,
+    "notes": "Initial factory calibration"
+  },
+  "validation": {
+    "test_frequencies": [146520000, 462675000, 155340000],
+    "test_bearings": [0, 45, 90, 135, 180, 225, 270, 315],
+    "accuracy_threshold": 2.0,
+    "confidence_threshold": 0.8
+  }
+}

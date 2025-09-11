@@ -1,0 +1,385 @@
+#!/bin/bash
+# KrakenSDR Passive Radar Control Script
+# Location: /usr/local/bin/kraken_radar
+
+KRAKEN_PID="/var/run/kraken"
+KRAKEN_LOG="/var/log/kraken"
+KRAKEN_CONFIG="/etc/kraken"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+NC='\033[0m'
+
+# Default illuminator configurations
+declare -A ILLUMINATOR_CONFIGS
+ILLUMINATOR_CONFIGS["FM_101.5"]="101500000:200000:50000:FM_BROADCAST"
+ILLUMINATOR_CONFIGS["FM_103.1"]="103100000:200000:50000:FM_BROADCAST"
+ILLUMINATOR_CONFIGS["DVB_T_CH21"]="474000000:8000000:100000:DVB_T"
+ILLUMINATOR_CONFIGS["DVB_T_CH22"]="482000000:8000000:100000:DVB_T"
+ILLUMINATOR_CONFIGS["LTE_1900"]="1900000000:20000000:20000:LTE"
+
+# Log function
+log_radar() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - RADAR: $1" >> $KRAKEN_LOG/passive_radar.log
+}
+
+# Check if passive radar is running
+is_radar_running() {
+    local pidfile="$KRAKEN_PID/radar.pid"
+    if [ -f "$pidfile" ]; then
+        local pid=$(cat "$pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        else
+            rm -f "$pidfile"
+            return 1
+        fi
+    fi
+    return 1
+}
+
+# Get illuminator configuration
+get_illuminator_config() {
+    local illuminator=$1
+    local config="${ILLUMINATOR_CONFIGS[$illuminator]}"
+    if [ -n "$config" ]; then
+        echo "$config"
+    else
+        echo "101500000:200000:50000:FM_BROADCAST"
+    fi
+}
+
+# Start passive radar
+start_passive_radar() {
+    local illuminator=${1:-"FM_101.5"}
+    local channels=${2:-"2,3,4,5"}
+    local mode=${3:-"CONTINUOUS"}
+    
+    echo -e "${GREEN}Starting Passive Radar System...${NC}"
+    echo -e "  Illuminator: ${BLUE}$illuminator${NC}"
+    echo -e "  Surveillance Channels: ${BLUE}$channels${NC}"
+    echo -e "  Mode: ${BLUE}$mode${NC}"
+    
+    # Check if already running
+    if is_radar_running; then
+        echo -e "${YELLOW}Passive radar is already running${NC}"
+        return 1
+    fi
+    
+    # Get illuminator configuration
+    local config=$(get_illuminator_config $illuminator)
+    IFS=':' read -r frequency bandwidth power type <<< "$config"
+    
+    echo -e "  Frequency: ${BLUE}$frequency Hz${NC}"
+    echo -e "  Bandwidth: ${BLUE}$bandwidth Hz${NC}"
+    echo -e "  Type: ${BLUE}$type${NC}"
+    
+    # Create directories if they don't exist
+    mkdir -p $KRAKEN_PID $KRAKEN_LOG
+    
+    # Start the passive radar process
+    if python3 /home/pi/krakensdr_doa/scripts/passive_radar.py \
+        --illuminator $illuminator \
+        --frequency $frequency \
+        --bandwidth $bandwidth \
+        --surveillance-channels $channels \
+        --mode $mode \
+        --daemon \
+        --pidfile $KRAKEN_PID/radar.pid \
+        --logfile $KRAKEN_LOG/passive_radar.log 2>/dev/null; then
+        echo -e "${GREEN}Passive radar started successfully${NC}"
+        log_radar "Passive radar started - Illuminator: $illuminator, Channels: $channels"
+        return 0
+    else
+        echo -e "${RED}Failed to start passive radar${NC}"
+        log_radar "Failed to start passive radar"
+        return 1
+    fi
+}
+
+# Stop passive radar
+stop_passive_radar() {
+    echo -e "${YELLOW}Stopping Passive Radar System...${NC}"
+    
+    if ! is_radar_running; then
+        echo -e "${YELLOW}Passive radar is not running${NC}"
+        return 1
+    fi
+    
+    local pidfile="$KRAKEN_PID/radar.pid"
+    local pid=$(cat "$pidfile")
+    
+    # Send TERM signal first
+    if kill -TERM "$pid" 2>/dev/null; then
+        # Wait for graceful shutdown
+        local count=0
+        while kill -0 "$pid" 2>/dev/null && [ $count -lt 15 ]; do
+            sleep 1
+            ((count++))
+        done
+        
+        # Force kill if still running
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null
+        fi
+        
+        rm -f "$pidfile"
+        echo -e "${GREEN}Passive radar stopped successfully${NC}"
+        log_radar "Passive radar stopped"
+        return 0
+    else
+        echo -e "${RED}Failed to stop passive radar${NC}"
+        rm -f "$pidfile"
+        return 1
+    fi
+}
+
+# Show passive radar status
+show_radar_status() {
+    echo -e "${BLUE}Passive Radar System Status${NC}"
+    echo "============================"
+    
+    if is_radar_running; then
+        echo -e "Status: ${GREEN}●${NC} RUNNING"
+        local pid=$(cat "$KRAKEN_PID/radar.pid")
+        echo -e "PID: ${BLUE}$pid${NC}"
+        
+        # Show process info
+        echo -e "${YELLOW}Process Information:${NC}"
+        if ps -p $pid -o pid,ppid,pcpu,pmem,etime,cmd --no-headers 2>/dev/null; then
+            echo
+        fi
+        
+        # Show target count if available
+        if [ -f "/tmp/radar_targets.txt" ]; then
+            local target_count=$(wc -l < /tmp/radar_targets.txt 2>/dev/null || echo "0")
+            echo -e "Active Targets: ${BLUE}$target_count${NC}"
+        fi
+        
+        # Show detection statistics
+        if [ -f "/tmp/radar_stats.txt" ]; then
+            echo -e "${YELLOW}Detection Statistics:${NC}"
+            cat /tmp/radar_stats.txt 2>/dev/null | while read line; do
+                echo "  $line"
+            done
+        fi
+    else
+        echo -e "Status: ${RED}●${NC} STOPPED"
+    fi
+    
+    # Show available illuminators
+    echo
+    echo -e "${YELLOW}Available Illuminators:${NC}"
+    for illuminator in "${!ILLUMINATOR_CONFIGS[@]}"; do
+        local config="${ILLUMINATOR_CONFIGS[$illuminator]}"
+        IFS=':' read -r frequency bandwidth power type <<< "$config"
+        echo -e "  ${BLUE}$illuminator${NC}: $frequency Hz ($type)"
+    done
+    
+    # Show recent log entries
+    if [ -f "$KRAKEN_LOG/passive_radar.log" ]; then
+        echo
+        echo -e "${YELLOW}Recent Activity:${NC}"
+        tail -5 "$KRAKEN_LOG/passive_radar.log" 2>/dev/null | while read line; do
+            echo "  $line"
+        done
+    fi
+}
+
+# Test passive radar functionality
+test_passive_radar() {
+    local illuminator=${1:-"FM_101.5"}
+    
+    echo -e "${BLUE}Testing Passive Radar with $illuminator...${NC}"
+    
+    # Start passive radar with test parameters
+    if start_passive_radar $illuminator "2,3,4,5" "TEST"; then
+        echo -e "${GREEN}Passive radar started for testing${NC}"
+        sleep 10
+        
+        # Check if still running
+        if is_radar_running; then
+            echo -e "${GREEN}Passive radar test: PASSED${NC}"
+            stop_passive_radar
+            return 0
+        else
+            echo -e "${RED}Passive radar test: FAILED (crashed)${NC}"
+            return 1
+        fi
+    else
+        echo -e "${RED}Passive radar test: FAILED (startup)${NC}"
+        return 1
+    fi
+}
+
+# Show targets in real-time
+monitor_targets() {
+    echo -e "${GREEN}Starting target monitoring...${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to exit${NC}"
+    echo
+    
+    if ! is_radar_running; then
+        echo -e "${RED}Passive radar is not running${NC}"
+        return 1
+    fi
+    
+    while true; do
+        clear
+        echo -e "${BLUE}Passive Radar Target Monitor - $(date)${NC}"
+        echo "=============================================="
+        
+        if [ -f "/tmp/radar_targets.txt" ]; then
+            echo -e "${YELLOW}Active Targets:${NC}"
+            cat /tmp/radar_targets.txt 2>/dev/null | head -20 | while read line; do
+                echo "  $line"
+            done
+        else
+            echo -e "${YELLOW}No target data available${NC}"
+        fi
+        
+        echo
+        if [ -f "/tmp/radar_stats.txt" ]; then
+            echo -e "${YELLOW}Statistics:${NC}"
+            cat /tmp/radar_stats.txt 2>/dev/null | while read line; do
+                echo "  $line"
+            done
+        fi
+        
+        sleep 2
+    done
+}
+
+# Show usage
+show_usage() {
+    echo "Usage: $0 [OPTIONS] COMMAND"
+    echo
+    echo "Commands:"
+    echo "  --start [--illuminator NAME] [--channels LIST] [--mode MODE]"
+    echo "  --stop"
+    echo "  --restart [--illuminator NAME] [--channels LIST]"
+    echo "  --status"
+    echo "  --test [--illuminator NAME]"
+    echo "  --monitor"
+    echo "  --list-illuminators"
+    echo
+    echo "Options:"
+    echo "  --illuminator NAME  Illuminator source (default: FM_101.5)"
+    echo "  --channels LIST     Surveillance channels (default: 2,3,4,5)"
+    echo "  --mode MODE         Operation mode (CONTINUOUS, TEST, CALIBRATION)"
+    echo
+    echo "Available Illuminators:"
+    for illuminator in "${!ILLUMINATOR_CONFIGS[@]}"; do
+        local config="${ILLUMINATOR_CONFIGS[$illuminator]}"
+        IFS=':' read -r frequency bandwidth power type <<< "$config"
+        echo "  $illuminator ($type)"
+    done
+    echo
+    echo "Examples:"
+    echo "  $0 --start"
+    echo "  $0 --start --illuminator FM_103.1 --channels 1,2,3,4"
+    echo "  $0 --stop"
+    echo "  $0 --status"
+    echo "  $0 --monitor"
+    echo "  $0 --test --illuminator DVB_T_CH21"
+}
+
+# Parse command line arguments
+ILLUMINATOR=""
+CHANNELS=""
+MODE=""
+COMMAND=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --start)
+            COMMAND="start"
+            shift
+            ;;
+        --stop)
+            COMMAND="stop"
+            shift
+            ;;
+        --restart)
+            COMMAND="restart"
+            shift
+            ;;
+        --status)
+            COMMAND="status"
+            shift
+            ;;
+        --test)
+            COMMAND="test"
+            shift
+            ;;
+        --monitor)
+            COMMAND="monitor"
+            shift
+            ;;
+        --list-illuminators)
+            COMMAND="list"
+            shift
+            ;;
+        --illuminator)
+            ILLUMINATOR="$2"
+            shift 2
+            ;;
+        --channels)
+            CHANNELS="$2"
+            shift 2
+            ;;
+        --mode)
+            MODE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+# Execute command
+case "$COMMAND" in
+    start)
+        start_passive_radar "$ILLUMINATOR" "$CHANNELS" "$MODE"
+        ;;
+    stop)
+        stop_passive_radar
+        ;;
+    restart)
+        stop_passive_radar
+        sleep 3
+        start_passive_radar "$ILLUMINATOR" "$CHANNELS" "$MODE"
+        ;;
+    status)
+        show_radar_status
+        ;;
+    test)
+        test_passive_radar "$ILLUMINATOR"
+        ;;
+    monitor)
+        monitor_targets
+        ;;
+    list)
+        echo -e "${BLUE}Available Illuminators:${NC}"
+        for illuminator in "${!ILLUMINATOR_CONFIGS[@]}"; do
+            local config="${ILLUMINATOR_CONFIGS[$illuminator]}"
+            IFS=':' read -r frequency bandwidth power type <<< "$config"
+            echo -e "  ${BLUE}$illuminator${NC}: $frequency Hz, $bandwidth Hz BW, $power W ($type)"
+        done
+        ;;
+    *)
+        echo -e "${RED}No command specified${NC}"
+        show_usage
+        exit 1
+        ;;
+esac

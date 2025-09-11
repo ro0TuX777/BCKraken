@@ -1,0 +1,58 @@
+[Unit]
+Description=KrakenSDR Maximum Utilization Service
+Documentation=file:///home/pi/krakensdr_doa/.context/README.md
+After=network.target heimdall-daq.service kraken-doa.service
+Wants=heimdall-daq.service kraken-doa.service
+Requires=heimdall-daq.service
+
+[Service]
+Type=forking
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/krakensdr_doa
+Environment=KRAKEN_CONFIG=/etc/kraken/max_utilization.json
+Environment=KRAKEN_MODE=MAX_UTILIZATION
+Environment=PYTHONPATH=/home/pi/krakensdr_doa
+ExecStartPre=/bin/bash -c 'mkdir -p /var/log/kraken /var/run/kraken /var/lib/kraken'
+ExecStartPre=/bin/bash -c 'chown pi:pi /var/log/kraken /var/run/kraken /var/lib/kraken'
+ExecStart=/usr/local/bin/kraken_max_util start
+ExecStop=/usr/local/bin/kraken_max_util stop
+ExecReload=/usr/local/bin/kraken_max_util restart
+PIDFile=/var/run/kraken/master.pid
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=120
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kraken-max-util
+
+# Resource limits
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+LimitCORE=0
+
+# Performance settings
+CPUAffinity=2 3 4 5 6 7
+IOSchedulingClass=1
+IOSchedulingPriority=3
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/kraken /var/run/kraken /var/lib/kraken /tmp /etc/kraken
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=false
+
+# Health check
+ExecStartPost=/bin/bash -c 'sleep 10 && /usr/local/bin/kraken_status --json > /var/run/kraken/health.json'
+
+[Install]
+WantedBy=multi-user.target

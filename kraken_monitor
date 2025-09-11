@@ -1,0 +1,474 @@
+#!/bin/bash
+# KrakenSDR Real-time Monitoring Script
+# Location: /usr/local/bin/kraken_monitor
+
+KRAKEN_PID="/var/run/kraken"
+KRAKEN_LOG="/var/log/kraken"
+KRAKEN_CONFIG="/etc/kraken"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+NC='\033[0m'
+
+# Global variables for monitoring
+REFRESH_RATE=2
+MONITOR_MODE="overview"
+SHOW_LOGS=false
+LOG_LINES=10
+
+# Signal handlers
+cleanup() {
+    tput cnorm  # Show cursor
+    clear
+    echo -e "${GREEN}Monitoring stopped.${NC}"
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+# Hide cursor
+tput civis
+
+# Check if process is running
+is_running() {
+    local pidfile="$1"
+    if [ -f "$pidfile" ]; then
+        local pid=$(cat "$pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Get process stats
+get_process_info() {
+    local pidfile="$1"
+    if [ -f "$pidfile" ]; then
+        local pid=$(cat "$pidfile")
+        if kill -0 "$pid" 2>/dev/null; then
+            ps -p $pid -o pcpu,pmem,etime --no-headers 2>/dev/null | awk '{printf "%.1f%% %.1f%% %s", $1, $2, $3}'
+        else
+            echo "- - -"
+        fi
+    else
+        echo "- - -"
+    fi
+}
+
+# Get system load
+get_system_load() {
+    local load=$(uptime | awk -F'load average:' '{print $2}' | cut -d',' -f1 | xargs)
+    local cores=$(nproc)
+    local percent=$(echo "scale=1; $load * 100 / $cores" | bc 2>/dev/null || echo "0.0")
+    echo "$percent"
+}
+
+# Get memory usage
+get_memory_usage() {
+    free | grep Mem | awk '{printf "%.1f", $3/$2 * 100.0}'
+}
+
+# Get network stats
+get_network_stats() {
+    if [ -f "/proc/net/dev" ]; then
+        local rx_bytes=$(cat /proc/net/dev | grep -E "(eth|wlan|enp)" | head -1 | awk '{print $2}')
+        local tx_bytes=$(cat /proc/net/dev | grep -E "(eth|wlan|enp)" | head -1 | awk '{print $10}')
+        echo "$rx_bytes $tx_bytes"
+    else
+        echo "0 0"
+    fi
+}
+
+# Monitor overview mode
+monitor_overview() {
+    while true; do
+        clear
+        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        
+        # Header
+        echo -e "${WHITE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${WHITE}║                        KrakenSDR Real-time Monitor                          ║${NC}"
+        echo -e "${WHITE}║                              $timestamp                              ║${NC}"
+        echo -e "${WHITE}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo
+        
+        # System metrics
+        local cpu_load=$(get_system_load)
+        local mem_usage=$(get_memory_usage)
+        local uptime_info=$(uptime -p 2>/dev/null | sed 's/up //' || echo "unknown")
+        
+        echo -e "${CYAN}╔═══ SYSTEM METRICS ═════════════════════════════════════════════════════════╗${NC}"
+        printf "${CYAN}║${NC} CPU Load: ${BLUE}%6s%%${NC}   Memory: ${BLUE}%6s%%${NC}   Uptime: ${BLUE}%-30s${NC} ${CYAN}║${NC}\n" \
+            "$cpu_load" "$mem_usage" "$uptime_info"
+        echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo
+        
+        # VFO Status
+        echo -e "${GREEN}╔═══ VFO STATUS ═════════════════════════════════════════════════════════════╗${NC}"
+        printf "${GREEN}║${NC} %-5s %-20s %-10s %-8s %-8s %-15s ${GREEN}║${NC}\n" "VFO" "Description" "Status" "CPU" "Memory" "Runtime"
+        echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════════════════════╣${NC}"
+        
+        local vfo_names=("" "Ham Emergency" "GMRS Channels" "Public Safety" "FM Reference" "Discovery Scanner")
+        
+        for i in {1..5}; do
+            local info=$(get_process_info "$KRAKEN_PID/vfo$i.pid")
+            read cpu mem runtime <<< "$info"
+            
+            if is_running "$KRAKEN_PID/vfo$i.pid"; then
+                printf "${GREEN}║${NC} %-5s %-20s ${GREEN}●${NC} %-9s %-8s %-8s %-15s ${GREEN}║${NC}\n" \
+                    "$i" "${vfo_names[$i]}" "RUNNING" "$cpu" "$mem" "$runtime"
+            else
+                printf "${GREEN}║${NC} %-5s %-20s ${RED}●${NC} %-9s %-8s %-8s %-15s ${GREEN}║${NC}\n" \
+                    "$i" "${vfo_names[$i]}" "STOPPED" "-" "-" "-"
+            fi
+        done
+        echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo
+        
+        # Processing Systems
+        echo -e "${PURPLE}╔═══ PROCESSING SYSTEMS ═════════════════════════════════════════════════════╗${NC}"
+        printf "${PURPLE}║${NC} %-25s %-10s %-8s %-8s %-15s ${PURPLE}║${NC}\n" "Component" "Status" "CPU" "Memory" "Runtime"
+        echo -e "${PURPLE}╠═══════════════════════════════════════════════════════════════════════════════╣${NC}"
+        
+        # Passive Radar
+        local radar_info=$(get_process_info "$KRAKEN_PID/radar.pid")
+        read radar_cpu radar_mem radar_time <<< "$radar_info"
+        if is_running "$KRAKEN_PID/radar.pid"; then
+            printf "${PURPLE}║${NC} %-25s ${GREEN}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Passive Radar" "RUNNING" "$radar_cpu" "$radar_mem" "$radar_time"
+        else
+            printf "${PURPLE}║${NC} %-25s ${RED}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Passive Radar" "STOPPED" "-" "-" "-"
+        fi
+        
+        # Beamforming
+        local beam_info=$(get_process_info "$KRAKEN_PID/beamform.pid")
+        read beam_cpu beam_mem beam_time <<< "$beam_info"
+        if is_running "$KRAKEN_PID/beamform.pid"; then
+            printf "${PURPLE}║${NC} %-25s ${GREEN}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Beamforming" "RUNNING" "$beam_cpu" "$beam_mem" "$beam_time"
+        else
+            printf "${PURPLE}║${NC} %-25s ${RED}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Beamforming" "STOPPED" "-" "-" "-"
+        fi
+        
+        # Signal Classification
+        local class_info=$(get_process_info "$KRAKEN_PID/classifier.pid")
+        read class_cpu class_mem class_time <<< "$class_info"
+        if is_running "$KRAKEN_PID/classifier.pid"; then
+            printf "${PURPLE}║${NC} %-25s ${GREEN}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Signal Classifier" "RUNNING" "$class_cpu" "$class_mem" "$class_time"
+        else
+            printf "${PURPLE}║${NC} %-25s ${RED}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Signal Classifier" "STOPPED" "-" "-" "-"
+        fi
+        
+        # Elasticsearch Streamer
+        local es_info=$(get_process_info "$KRAKEN_PID/elasticsearch.pid")
+        read es_cpu es_mem es_time <<< "$es_info"
+        if is_running "$KRAKEN_PID/elasticsearch.pid"; then
+            printf "${PURPLE}║${NC} %-25s ${GREEN}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Data Streamer" "RUNNING" "$es_cpu" "$es_mem" "$es_time"
+        else
+            printf "${PURPLE}║${NC} %-25s ${RED}●${NC} %-9s %-8s %-8s %-15s ${PURPLE}║${NC}\n" \
+                "Data Streamer" "STOPPED" "-" "-" "-"
+        fi
+        
+        echo -e "${PURPLE}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo
+        
+        # Data Flow Statistics
+        echo -e "${BLUE}╔═══ DATA FLOW STATISTICS ═══════════════════════════════════════════════════╗${NC}"
+        
+        # Elasticsearch document count
+        if curl -s http://localhost:9200/_cluster/health >/dev/null 2>&1; then
+            local doc_count=$(curl -s http://localhost:9200/kraken-sdr-*/_count 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo "0")
+            local es_health=$(curl -s http://localhost:9200/_cluster/health | jq -r '.status' 2>/dev/null || echo "unknown")
+            printf "${BLUE}║${NC} Elasticsearch: ${GREEN}●${NC} Connected   Health: ${BLUE}%-8s${NC}   Documents: ${BLUE}%10s${NC} ${BLUE}║${NC}\n" \
+                "$es_health" "$doc_count"
+        else
+            printf "${BLUE}║${NC} Elasticsearch: ${RED}●${NC} Disconnected   Health: ${RED}%-8s${NC}   Documents: ${RED}%10s${NC} ${BLUE}║${NC}\n" \
+                "unknown" "0"
+        fi
+        
+        # Show active targets if passive radar is running
+        if is_running "$KRAKEN_PID/radar.pid" && [ -f "/tmp/radar_targets.txt" ]; then
+            local target_count=$(wc -l < /tmp/radar_targets.txt 2>/dev/null || echo "0")
+            printf "${BLUE}║${NC} Passive Radar Targets: ${BLUE}%10s${NC}%45s ${BLUE}║${NC}\n" "$target_count" ""
+        fi
+        
+        echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        
+        # Show recent activity if logs enabled
+        if [ "$SHOW_LOGS" = true ]; then
+            echo
+            echo -e "${YELLOW}╔═══ RECENT ACTIVITY ════════════════════════════════════════════════════════╗${NC}"
+            if [ -f "$KRAKEN_LOG/kraken_control.log" ]; then
+                tail -$LOG_LINES "$KRAKEN_LOG/kraken_control.log" 2>/dev/null | while read line; do
+                    printf "${YELLOW}║${NC} %-76s ${YELLOW}║${NC}\n" "$line"
+                done
+            else
+                printf "${YELLOW}║${NC} %-76s ${YELLOW}║${NC}\n" "No activity log found"
+            fi
+            echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        fi
+        
+        # Footer with controls
+        echo
+        echo -e "${WHITE}Controls: [Ctrl+C] Exit  [F1] Toggle Logs  [F2] Change Refresh Rate${NC}"
+        
+        # Check for key presses (non-blocking)
+        if read -t $REFRESH_RATE -n 1 key 2>/dev/null; then
+            case $key in
+                $'\e')  # Escape sequence (function keys)
+                    read -t 0.1 -n 2 key2
+                    case $key2 in
+                        'OP')  # F1
+                            SHOW_LOGS=$([ "$SHOW_LOGS" = true ] && echo false || echo true)
+                            ;;
+                        'OQ')  # F2
+                            echo -e "\n${CYAN}Enter refresh rate (1-10 seconds): ${NC}"
+                            read -t 5 new_rate
+                            if [[ "$new_rate" =~ ^[1-9]$|^10$ ]]; then
+                                REFRESH_RATE=$new_rate
+                            fi
+                            ;;
+                    esac
+                    ;;
+            esac
+        fi
+    done
+}
+
+# Monitor VFO details
+monitor_vfo_details() {
+    while true; do
+        clear
+        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        
+        echo -e "${WHITE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${WHITE}║                          VFO Detailed Monitor                               ║${NC}"
+        echo -e "${WHITE}║                              $timestamp                              ║${NC}"
+        echo -e "${WHITE}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo
+        
+        local vfo_names=("" "Ham Emergency" "GMRS Channels" "Public Safety" "FM Reference" "Discovery Scanner")
+        local vfo_freqs=("" "146.520 MHz" "462.675 MHz" "155.340 MHz" "101.5 MHz" "AUTO")
+        local vfo_algorithms=("" "MUSIC" "Bartlett" "Capon" "Reference" "MEMS")
+        
+        for i in {1..5}; do
+            echo -e "${GREEN}╔═══ VFO $i - ${vfo_names[$i]} ═══════════════════════════════════════════════╗${NC}"
+            
+            if is_running "$KRAKEN_PID/vfo$i.pid"; then
+                local info=$(get_process_info "$KRAKEN_PID/vfo$i.pid")
+                read cpu mem runtime <<< "$info"
+                local pid=$(cat "$KRAKEN_PID/vfo$i.pid")
+                
+                printf "${GREEN}║${NC} Status: ${GREEN}●${NC} RUNNING   PID: ${BLUE}%-8s${NC}   Runtime: ${BLUE}%-15s${NC} ${GREEN}║${NC}\n" "$pid" "$runtime"
+                printf "${GREEN}║${NC} Frequency: ${BLUE}%-15s${NC}   Algorithm: ${BLUE}%-15s${NC}   CPU: ${BLUE}%-8s${NC} ${GREEN}║${NC}\n" \
+                    "${vfo_freqs[$i]}" "${vfo_algorithms[$i]}" "$cpu"
+                printf "${GREEN}║${NC} Memory: ${BLUE}%-8s${NC}%55s ${GREEN}║${NC}\n" "$mem" ""
+                
+                # Show recent detections if log exists
+                if [ -f "$KRAKEN_LOG/vfo$i.log" ]; then
+                    echo -e "${GREEN}║${NC} Recent Activity:${NC}%58s ${GREEN}║${NC}"
+                    tail -3 "$KRAKEN_LOG/vfo$i.log" 2>/dev/null | while read line; do
+                        printf "${GREEN}║${NC}   %-74s ${GREEN}║${NC}\n" "${line:0:74}"
+                    done
+                fi
+            else
+                printf "${GREEN}║${NC} Status: ${RED}●${NC} STOPPED%60s ${GREEN}║${NC}\n" ""
+                printf "${GREEN}║${NC} Frequency: ${BLUE}%-15s${NC}   Algorithm: ${BLUE}%-15s${NC}%20s ${GREEN}║${NC}\n" \
+                    "${vfo_freqs[$i]}" "${vfo_algorithms[$i]}" ""
+            fi
+            
+            echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+            echo
+        done
+        
+        echo -e "${WHITE}Controls: [Ctrl+C] Exit  [F3] Overview Mode${NC}"
+        
+        if read -t $REFRESH_RATE -n 1 key 2>/dev/null; then
+            case $key in
+                $'\e')
+                    read -t 0.1 -n 2 key2
+                    case $key2 in
+                        'OR')  # F3
+                            MONITOR_MODE="overview"
+                            return
+                            ;;
+                    esac
+                    ;;
+            esac
+        fi
+    done
+}
+
+# Monitor passive radar
+monitor_passive_radar() {
+    while true; do
+        clear
+        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        
+        echo -e "${WHITE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${WHITE}║                        Passive Radar Monitor                                ║${NC}"
+        echo -e "${WHITE}║                              $timestamp                              ║${NC}"
+        echo -e "${WHITE}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo
+        
+        if is_running "$KRAKEN_PID/radar.pid"; then
+            local info=$(get_process_info "$KRAKEN_PID/radar.pid")
+            read cpu mem runtime <<< "$info"
+            
+            echo -e "${PURPLE}╔═══ RADAR STATUS ═══════════════════════════════════════════════════════════╗${NC}"
+            printf "${PURPLE}║${NC} Status: ${GREEN}●${NC} RUNNING   CPU: ${BLUE}%-8s${NC}   Memory: ${BLUE}%-8s${NC}   Runtime: ${BLUE}%-15s${NC} ${PURPLE}║${NC}\n" \
+                "$cpu" "$mem" "$runtime"
+            echo -e "${PURPLE}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+            echo
+            
+            # Show targets
+            echo -e "${BLUE}╔═══ ACTIVE TARGETS ═════════════════════════════════════════════════════════╗${NC}"
+            if [ -f "/tmp/radar_targets.txt" ]; then
+                local target_count=$(wc -l < /tmp/radar_targets.txt 2>/dev/null || echo "0")
+                printf "${BLUE}║${NC} Target Count: ${BLUE}%-10s${NC}%55s ${BLUE}║${NC}\n" "$target_count" ""
+                echo -e "${BLUE}╠═══════════════════════════════════════════════════════════════════════════════╣${NC}"
+                
+                if [ "$target_count" -gt 0 ]; then
+                    printf "${BLUE}║${NC} %-10s %-15s %-15s %-15s %-15s ${BLUE}║${NC}\n" "Target ID" "Range (m)" "Velocity (m/s)" "Bearing (°)" "RCS (dBsm)"
+                    echo -e "${BLUE}╠═══════════════════════════════════════════════════════════════════════════════╣${NC}"
+                    
+                    head -10 /tmp/radar_targets.txt 2>/dev/null | while read line; do
+                        printf "${BLUE}║${NC} %-76s ${BLUE}║${NC}\n" "$line"
+                    done
+                else
+                    printf "${BLUE}║${NC} No targets detected%60s ${BLUE}║${NC}\n" ""
+                fi
+            else
+                printf "${BLUE}║${NC} No target data available%56s ${BLUE}║${NC}\n" ""
+            fi
+            echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+            
+            # Show statistics
+            echo
+            echo -e "${YELLOW}╔═══ DETECTION STATISTICS ═══════════════════════════════════════════════════╗${NC}"
+            if [ -f "/tmp/radar_stats.txt" ]; then
+                cat /tmp/radar_stats.txt 2>/dev/null | while read line; do
+                    printf "${YELLOW}║${NC} %-76s ${YELLOW}║${NC}\n" "$line"
+                done
+            else
+                printf "${YELLOW}║${NC} No statistics available%56s ${YELLOW}║${NC}\n" ""
+            fi
+            echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        else
+            echo -e "${RED}╔═══ RADAR STATUS ═══════════════════════════════════════════════════════════╗${NC}"
+            printf "${RED}║${NC} Status: ${RED}●${NC} STOPPED%62s ${RED}║${NC}\n" ""
+            echo -e "${RED}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+        fi
+        
+        echo
+        echo -e "${WHITE}Controls: [Ctrl+C] Exit  [F3] Overview Mode${NC}"
+        
+        if read -t $REFRESH_RATE -n 1 key 2>/dev/null; then
+            case $key in
+                $'\e')
+                    read -t 0.1 -n 2 key2
+                    case $key2 in
+                        'OR')  # F3
+                            MONITOR_MODE="overview"
+                            return
+                            ;;
+                    esac
+                    ;;
+            esac
+        fi
+    done
+}
+
+# Show usage
+show_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo
+    echo "Options:"
+    echo "  --mode MODE       Monitor mode (overview, vfo, radar)"
+    echo "  --refresh RATE    Refresh rate in seconds (1-10, default: 2)"
+    echo "  --logs            Show recent log activity"
+    echo "  --log-lines N     Number of log lines to show (default: 10)"
+    echo "  --help            Show this help message"
+    echo
+    echo "Interactive Controls:"
+    echo "  Ctrl+C            Exit monitoring"
+    echo "  F1                Toggle log display"
+    echo "  F2                Change refresh rate"
+    echo "  F3                Switch to overview mode"
+    echo
+    echo "Examples:"
+    echo "  $0                Start overview monitoring"
+    echo "  $0 --mode vfo     Monitor VFO details"
+    echo "  $0 --mode radar   Monitor passive radar"
+    echo "  $0 --logs         Show logs in overview"
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --mode)
+            MONITOR_MODE="$2"
+            shift 2
+            ;;
+        --refresh)
+            if [[ "$2" =~ ^[1-9]$|^10$ ]]; then
+                REFRESH_RATE="$2"
+            else
+                echo -e "${RED}Invalid refresh rate. Must be 1-10 seconds.${NC}"
+                exit 1
+            fi
+            shift 2
+            ;;
+        --logs)
+            SHOW_LOGS=true
+            shift
+            ;;
+        --log-lines)
+            LOG_LINES="$2"
+            shift 2
+            ;;
+        --help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+# Start monitoring based on mode
+echo -e "${GREEN}Starting KrakenSDR monitoring in $MONITOR_MODE mode...${NC}"
+echo -e "${YELLOW}Press Ctrl+C to exit${NC}"
+sleep 1
+
+case $MONITOR_MODE in
+    overview)
+        monitor_overview
+        ;;
+    vfo)
+        monitor_vfo_details
+        ;;
+    radar)
+        monitor_passive_radar
+        ;;
+    *)
+        echo -e "${RED}Invalid monitor mode: $MONITOR_MODE${NC}"
+        echo -e "${YELLOW}Valid modes: overview, vfo, radar${NC}"
+        exit 1
+        ;;
+esac

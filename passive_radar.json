@@ -1,0 +1,35 @@
+{
+  "illuminator": {
+    "type": "FM_BROADCAST",
+    "frequency": 101500000,
+    "bandwidth": 200000,
+    "power": 50000,
+    "location": [40.7128, -74.0060]
+  },
+  "reference_processing": {
+    "channel": 4,
+    "gain": 15,
+    "filter_bandwidth": 200000,
+    "adaptive_filtering": true
+  },
+  "surveillance_processing": {
+    "channels": [1, 2, 3, 5],
+    "gain": [20, 25, 30, 20],
+    "beamforming": true,
+    "clutter_suppression": true
+  },
+  "detection": {
+    "range_resolution": 300.0,
+    "doppler_resolution": 1.0,
+    "max_range": 150000.0,
+    "max_velocity": 1000.0,
+    "cfar_type": "CA_CFAR",
+    "false_alarm_rate": 1e-6
+  },
+  "tracking": {
+    "enabled": true,
+    "max_tracks": 50,
+    "track_timeout": 10.0,
+    "gate_size": 3.0
+  }
+}

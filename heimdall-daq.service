@@ -1,0 +1,38 @@
+[Unit]
+Description=Heimdall DAQ Service for KrakenSDR
+Documentation=https://github.com/krakenrf/heimdall_daq_fw
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/heimdall_daq_fw
+Environment=PYTHONPATH=/home/pi/heimdall_daq_fw
+Environment=KRAKEN_CONFIG=/etc/kraken/max_utilization.json
+ExecStartPre=/bin/bash -c 'mkdir -p /var/log/kraken /var/run/kraken'
+ExecStartPre=/bin/bash -c 'chown pi:pi /var/log/kraken /var/run/kraken'
+ExecStart=/usr/bin/python3 heimdall.py
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=always
+RestartSec=10
+TimeoutStartSec=30
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=heimdall-daq
+
+# Resource limits
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/kraken /var/run/kraken /tmp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
