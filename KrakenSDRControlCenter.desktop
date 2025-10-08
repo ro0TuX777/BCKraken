@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=KrakenSDR Control Center
+Comment=KrakenSDR Terminal Button Interface - RF Signal Analysis and Direction Finding
+Exec=/home/dragos/rf-kit/kraken-sdr/kraken_menu
+Icon=/home/dragos/rf-kit/kraken-sdr/Kraken.png
+Terminal=true
+Categories=Network;Security;System;X-HamRadio;X-SDR;
+Keywords=kraken;sdr;radio;direction;finding;radar;spectrum;analysis;rf;signal;
+StartupNotify=true
+StartupWMClass=krakensdr control center
