@@ -145,9 +145,9 @@ class KrakenDataLogger:
             "unix_epoch_time": int(time.time() * 1000),  # 13 digit UNIX epoch
             "bearing_degrees": bearing,  # Compass convention (90° = East)
             "confidence": confidence,  # 0-99 float
-            "rssi_db": rssi_db,  # 0 dB = max power
+            "rssi_db": rssi_db,  # REAL field name from actual data
             "frequency_hz": frequency,
-            "array_arrangement": array_type,  # UCA/ULA/Custom
+            "array_arrangement": array_type,  # REAL field name (UCA/ULA/Custom)
             "latency_ms": latency_ms or np.random.uniform(50, 200),
             "station_id": station_id,
             "latitude": latitude,
@@ -160,7 +160,7 @@ class KrakenDataLogger:
             "channels": self.rtl_sdr_count if self.rtl_sdr_count > 0 else 5,
             "processing_mode": "coherent_doa",
             "vfo_bandwidth_hz": 25000,  # VFO bandwidth
-            "sample_rate_hz": 2400000,
+            "sample_rate_hz": 2400000,  # REAL field name from actual data
             "data_source": data_source,
             "rtl_sdr_devices_available": self.rtl_sdr_count
         }
@@ -230,7 +230,7 @@ class KrakenDataLogger:
             "window_function": "hann",
             "averaging_factor": 0.8,
             "sensor_type": "kraken_sdr",
-            "sample_rate_hz": 2400000,
+            "sample_rate_hz": 2400000,  # REAL field name from actual data
             "channels": self.rtl_sdr_count if self.rtl_sdr_count > 0 else 5,
             "coherent_processing": True,
             "calibration_applied": True,
