@@ -14,9 +14,9 @@ Version=1.0
 Type=Application
 Name=KrakenSDR Control Center
 Comment=KrakenSDR Terminal Button Interface - RF Signal Analysis and Direction Finding
-Exec=/home/dragos/rf-kit/kraken-sdr/kraken_menu
+Exec=qterminal -e /home/dragos/rf-kit/kraken-sdr/kraken_menu
 Icon=/home/dragos/rf-kit/kraken-sdr/Kraken.png
-Terminal=true
+Terminal=false
 Categories=Network;Security;System;X-HamRadio;X-SDR;
 Keywords=kraken;sdr;radio;direction;finding;radar;spectrum;analysis;rf;signal;
 StartupNotify=true
@@ -38,6 +38,26 @@ The desktop icon has been deployed to:
 
 3. **Source**: `/home/dragos/rf-kit/kraken-sdr/KrakenSDRControlCenter.desktop`
    - Original desktop file for reference/backup
+
+## 🔧 Troubleshooting Fix Applied
+
+### Issue: "Failed to execute child process 'xterm' (No such file or directory)"
+
+**Problem**: The original desktop file used `Terminal=true`, which caused the desktop environment to look for `xterm` to launch the terminal application. However, `xterm` was not installed on the system.
+
+**Solution Applied**: Modified the desktop file to:
+1. Use `qterminal -e` to explicitly specify the available terminal emulator
+2. Changed `Terminal=false` since we're now handling the terminal launch explicitly
+3. Updated all deployed copies of the desktop file
+
+**Technical Details**:
+- **Before**: `Exec=/home/dragos/rf-kit/kraken-sdr/kraken_menu` with `Terminal=true`
+- **After**: `Exec=qterminal -e /home/dragos/rf-kit/kraken-sdr/kraken_menu` with `Terminal=false`
+
+**Alternative Solutions**:
+1. Install xterm: `sudo apt install xterm`
+2. Use x-terminal-emulator: `Exec=x-terminal-emulator -e /path/to/kraken_menu`
+3. Use sensible-terminal: `Exec=sensible-terminal -e /path/to/kraken_menu`
 
 ## 🎯 Application Details
 
