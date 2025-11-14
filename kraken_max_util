@@ -1,0 +1,148 @@
+#!/bin/bash
+#
+# KrakenSDR Maximum Utility Control
+# Starts/stops all KrakenSDR components
+#
+
+KRAKEN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ACTION="$1"
+
+case "$ACTION" in
+    start)
+        echo "Starting KrakenSDR system..."
+        echo ""
+        
+        # Check if already running
+        if pgrep -f "daq_start_sm.sh" > /dev/null || pgrep -f "gui_run.sh" > /dev/null; then
+            echo "⚠ KrakenSDR appears to be already running"
+            echo "  Use 'kraken_max_util stop' first, or check processes:"
+            echo "  ps aux | grep -E 'heimdall|kraken'"
+            exit 1
+        fi
+        
+        # Start the system
+        cd "$KRAKEN_DIR/krakensdr_doa/util"
+        
+        # Check if we have conda or venv
+        if [ -d "$KRAKEN_DIR/kraken_env" ]; then
+            echo "Using Python virtual environment..."
+            export PATH="$KRAKEN_DIR/kraken_env/bin:$PATH"
+            
+            # Modify the start script to use venv instead of conda
+            cd "$KRAKEN_DIR"
+            
+            # Start Heimdall DAQ
+            echo "Starting Heimdall DAQ..."
+            cd heimdall_daq_fw/Firmware
+            sudo env "PATH=$PATH" nohup ./daq_start_sm.sh > /tmp/kraken_daq.log 2>&1 &
+
+            # Wait for DAQ to be ready (check for rtl_daq.out process)
+            echo "  Waiting for DAQ to initialize..."
+            for i in {1..30}; do
+                if pgrep -f "rtl_daq.out" > /dev/null; then
+                    echo "  ✓ DAQ is ready"
+                    break
+                fi
+                sleep 1
+                if [ $i -eq 30 ]; then
+                    echo "  ⚠ DAQ did not start within 30 seconds"
+                    echo "  Check logs: tail /tmp/kraken_daq.log"
+                    exit 1
+                fi
+            done
+
+            # Start KrakenSDR DOA web interface
+            echo "Starting KrakenSDR DOA web interface..."
+            cd ../../krakensdr_doa
+            source "$KRAKEN_DIR/kraken_env/bin/activate"
+            sudo env "PATH=$PATH" nohup ./gui_run.sh > /tmp/kraken_gui.log 2>&1 &
+
+            # Wait for web interface to be ready (check for port 8080)
+            echo "  Waiting for web interface to start..."
+            for i in {1..60}; do
+                if sudo ss -tlnp | grep -q ":8080"; then
+                    echo "  ✓ Web interface is ready"
+                    break
+                fi
+                sleep 1
+                if [ $i -eq 60 ]; then
+                    echo "  ⚠ Web interface did not start within 60 seconds"
+                    echo "  Check logs: tail /tmp/kraken_gui.log"
+                    exit 1
+                fi
+            done
+
+            echo ""
+            echo "✓ KrakenSDR system started successfully!"
+            echo "  Web interface: http://localhost:8080"
+            echo "  DAQ log: /tmp/kraken_daq.log"
+            echo "  GUI log: /tmp/kraken_gui.log"
+            echo ""
+            echo "To stop: kraken_max_util stop"
+        else
+            echo "ERROR: Python environment not found"
+            echo "Run: cd $KRAKEN_DIR && ./build_all.sh"
+            exit 1
+        fi
+        ;;
+        
+    stop)
+        echo "Stopping KrakenSDR system..."
+
+        # Kill all processes directly (no password prompts from subscripts)
+        echo "  Stopping web interface..."
+        sudo pkill -9 -f "python.*app.py" 2>/dev/null
+        sudo pkill -9 -f "node.*index.js" 2>/dev/null
+        sudo pkill -9 -f "php" 2>/dev/null
+
+        echo "  Stopping DAQ processes..."
+        sudo pkill -9 -f "rtl_daq.out" 2>/dev/null
+        sudo pkill -9 -f "rebuffer.out" 2>/dev/null
+        sudo pkill -9 -f "decimate.out" 2>/dev/null
+        sudo pkill -9 -f "iq_server.out" 2>/dev/null
+        sudo pkill -9 -f "sync.out" 2>/dev/null
+
+        echo "  Stopping helper scripts..."
+        sudo pkill -9 -f "gui_run.sh" 2>/dev/null
+        sudo pkill -9 -f "daq_start_sm.sh" 2>/dev/null
+
+        sleep 1
+
+        echo "✓ KrakenSDR system stopped"
+        ;;
+        
+    status)
+        echo "KrakenSDR System Status:"
+        echo ""
+        
+        # Check Heimdall DAQ
+        if pgrep -f "rtl_daq.out" > /dev/null; then
+            echo "  Heimdall DAQ: ✓ RUNNING"
+        else
+            echo "  Heimdall DAQ: ✗ STOPPED"
+        fi
+        
+        # Check DOA interface
+        if pgrep -f "gui_run.sh" > /dev/null; then
+            echo "  DOA Interface: ✓ RUNNING (http://localhost:8080)"
+        else
+            echo "  DOA Interface: ✗ STOPPED"
+        fi
+        
+        echo ""
+        echo "Processes:"
+        ps aux | grep -E 'heimdall|kraken|rtl_daq|gui_run' | grep -v grep || echo "  No KrakenSDR processes running"
+        ;;
+        
+    *)
+        echo "Usage: kraken_max_util {start|stop|status}"
+        echo ""
+        echo "Commands:"
+        echo "  start  - Start Heimdall DAQ and KrakenSDR DOA web interface"
+        echo "  stop   - Stop all KrakenSDR components"
+        echo "  status - Show current status"
+        exit 1
+        ;;
+esac
+

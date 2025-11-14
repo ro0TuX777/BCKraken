@@ -1,0 +1,66 @@
+#!/bin/bash
+#
+# KrakenSDR VFO Control Wrapper
+# Bridges kraken_menu to real KrakenSDR DOA web interface
+#
+
+KRAKEN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse arguments
+ACTION=""
+VFO_NUM=""
+FREQUENCY=""
+ALGORITHM=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --start)
+            ACTION="start"
+            shift
+            ;;
+        --stop)
+            ACTION="stop"
+            shift
+            ;;
+        --vfo)
+            VFO_NUM="$2"
+            shift 2
+            ;;
+        --frequency)
+            FREQUENCY="$2"
+            shift 2
+            ;;
+        --algorithm)
+            ALGORITHM="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# VFO functionality is handled by the KrakenSDR DOA web interface
+# This script provides compatibility with the menu system
+
+if [ "$ACTION" = "start" ]; then
+    echo "VFO $VFO_NUM configuration:"
+    echo "  Frequency: $FREQUENCY"
+    echo "  Algorithm: $ALGORITHM"
+    echo ""
+    echo "NOTE: VFO settings are configured through the KrakenSDR DOA web interface"
+    echo "      Access at: http://localhost:8080"
+    echo ""
+    echo "To start the full KrakenSDR system, use:"
+    echo "  cd $KRAKEN_DIR/krakensdr_doa/util"
+    echo "  ./kraken_doa_start.sh"
+    
+elif [ "$ACTION" = "stop" ]; then
+    echo "Stopping VFO $VFO_NUM..."
+    echo "NOTE: VFO control is managed by the KrakenSDR DOA web interface"
+    
+else
+    echo "Usage: kraken_vfo --start|--stop --vfo <num> [--frequency <freq>] [--algorithm <algo>]"
+    exit 1
+fi
+

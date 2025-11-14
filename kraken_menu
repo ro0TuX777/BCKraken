@@ -62,15 +62,15 @@ show_status() {
     fi
 
     # Live Activity Summary
-    if [ -d "kraken-logs" ] && [ "$(ls -A kraken-logs 2>/dev/null)" ]; then
+    if [ -d "../data/kraken" ] && [ "$(ls -A ../data/kraken 2>/dev/null)" ]; then
         echo -e "${CYAN}  Recent Activity:${NC}"
-        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
-            local latest_bearing=$(tail -1 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '.bearing_degrees // 0' 2>/dev/null | cut -d. -f1)
-            local latest_freq=$(tail -1 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '.frequency_hz // 0' 2>/dev/null | awk '{printf "%.1f", $1/1e6}')
+        if [ -f "../data/kraken/kraken-doa-"*.json ]; then
+            local latest_bearing=$(tail -1 ../data/kraken/kraken-doa-*.json 2>/dev/null | jq -r '.bearing_degrees // 0' 2>/dev/null | cut -d. -f1)
+            local latest_freq=$(tail -1 ../data/kraken/kraken-doa-*.json 2>/dev/null | jq -r '.frequency_hz // 0' 2>/dev/null | awk '{printf "%.1f", $1/1e6}')
             echo -e "    📍 Latest Signal: ${BLUE}${latest_freq}MHz${NC} at ${BLUE}${latest_bearing}°${NC}"
         fi
-        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
-            local target_count=$(wc -l < kraken-logs/kraken-radar-*.json 2>/dev/null || echo "0")
+        if [ -f "../data/kraken/kraken-radar-"*.json ]; then
+            local target_count=$(wc -l < ../data/kraken/kraken-radar-*.json 2>/dev/null || echo "0")
             echo -e "    🛡️ Radar Targets: ${BLUE}${target_count}${NC} detected"
         fi
     fi
@@ -219,14 +219,14 @@ continuous_scanning_loop() {
         # Show latest detections from current scan
         echo
         echo -e "${BLUE}═══ LATEST DETECTIONS (Scan #${scan_count}) ═══${NC}"
-        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+        if [ -f "../data/kraken/kraken-doa-"*.json ]; then
             echo -e "${BLUE}📍 Direction Finding:${NC}"
-            tail -3 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"  • \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)° (\(.confidence*100 | floor)% confidence)"' 2>/dev/null | tail -3
+            tail -3 ../data/kraken/kraken-doa-*.json 2>/dev/null | jq -r '"  • \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)° (\(.confidence*100 | floor)% confidence)"' 2>/dev/null | tail -3
         fi
 
-        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+        if [ -f "../data/kraken/kraken-radar-"*.json ]; then
             echo -e "${PURPLE}🛡️ Passive Radar:${NC}"
-            tail -2 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"  • Target at \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor) m/s"' 2>/dev/null | tail -2
+            tail -2 ../data/kraken/kraken-radar-*.json 2>/dev/null | jq -r '"  • Target at \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor) m/s"' 2>/dev/null | tail -2
         fi
 
         # Show data export status
@@ -514,21 +514,21 @@ live_monitor_mode() {
         echo -e "${CYAN}═══ 🔴 LIVE DETECTIONS STREAM ═══${NC}"
         echo -e "${GREEN}[$(date '+%H:%M:%S')] Scanning for new signals...${NC}"
 
-        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+        if [ -f "../data/kraken/kraken-doa-"*.json ]; then
             echo -e "${BLUE}📍 Direction Finding (Last 5):${NC}"
-            tail -5 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz → \(.bearing_degrees | floor)° (\(.confidence*100 | floor)%)"' 2>/dev/null | tail -5 || echo "  • No direction finding data"
+            tail -5 ../data/kraken/kraken-doa-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz → \(.bearing_degrees | floor)° (\(.confidence*100 | floor)%)"' 2>/dev/null | tail -5 || echo "  • No direction finding data"
         fi
 
         echo
-        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+        if [ -f "../data/kraken/kraken-radar-"*.json ]; then
             echo -e "${PURPLE}🛡️ Passive Radar (Last 3):${NC}"
-            tail -3 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] Target: \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor)km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor)m/s"' 2>/dev/null | tail -3 || echo "  • No radar targets"
+            tail -3 ../data/kraken/kraken-radar-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] Target: \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor)km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor)m/s"' 2>/dev/null | tail -3 || echo "  • No radar targets"
         fi
 
         echo
-        if [ -f "kraken-logs/kraken-spectrum-"*.json ]; then
+        if [ -f "../data/kraken/kraken-spectrum-"*.json ]; then
             echo -e "${BLUE}📊 Spectrum Activity (Last 2):${NC}"
-            tail -2 kraken-logs/kraken-spectrum-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] Scan: \(.frequency_range_hz.start/1e6 | floor)-\(.frequency_range_hz.end/1e6 | floor) MHz"' 2>/dev/null | tail -2 || echo "  • No spectrum data"
+            tail -2 ../data/kraken/kraken-spectrum-*.json 2>/dev/null | jq -r '"[" + (.["@timestamp"] | split("T")[1] | split(".")[0]) + "] Scan: \(.frequency_range_hz.start/1e6 | floor)-\(.frequency_range_hz.end/1e6 | floor) MHz"' 2>/dev/null | tail -2 || echo "  • No spectrum data"
         fi
 
         # Show real-time Elasticsearch status
@@ -607,26 +607,26 @@ view_live_logs() {
         echo -e "${CYAN}Auto-refresh every 2 seconds | Press 'q' to exit${NC}"
         echo
 
-        if [ -d "kraken-logs" ] && [ "$(ls -A kraken-logs 2>/dev/null)" ]; then
+        if [ -d "../data/kraken" ] && [ "$(ls -A ../data/kraken 2>/dev/null)" ]; then
             echo -e "${GREEN}📍 Direction Finding Activity:${NC}"
-            if [ -f "kraken-logs/kraken-doa-"*.json ]; then
-                tail -5 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz → \(.bearing_degrees | floor)° (\(.station_id // "Unknown"))"' 2>/dev/null | tail -5
+            if [ -f "../data/kraken/kraken-doa-"*.json ]; then
+                tail -5 ../data/kraken/kraken-doa-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz → \(.bearing_degrees | floor)° (\(.station_id // "Unknown"))"' 2>/dev/null | tail -5
             else
                 echo "  No direction finding data"
             fi
 
             echo
             echo -e "${PURPLE}🛡️ Passive Radar Activity:${NC}"
-            if [ -f "kraken-logs/kraken-radar-"*.json ]; then
-                tail -5 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] Target: \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor)km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor)m/s"' 2>/dev/null | tail -5
+            if [ -f "../data/kraken/kraken-radar-"*.json ]; then
+                tail -5 ../data/kraken/kraken-radar-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] Target: \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor)km, \(.target.bearing_degrees | floor)°, \(.target.velocity_ms | floor)m/s"' 2>/dev/null | tail -5
             else
                 echo "  No radar data"
             fi
 
             echo
             echo -e "${BLUE}📊 Spectrum Activity:${NC}"
-            if [ -f "kraken-logs/kraken-spectrum-"*.json ]; then
-                tail -3 kraken-logs/kraken-spectrum-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] Scan: \(.frequency_range_hz.start/1e6 | floor)-\(.frequency_range_hz.end/1e6 | floor) MHz"' 2>/dev/null | tail -3
+            if [ -f "../data/kraken/kraken-spectrum-"*.json ]; then
+                tail -3 ../data/kraken/kraken-spectrum-*.json 2>/dev/null | jq -r '"[\(.["@timestamp"] | split("T")[1] | split(".")[0])] Scan: \(.frequency_range_hz.start/1e6 | floor)-\(.frequency_range_hz.end/1e6 | floor) MHz"' 2>/dev/null | tail -3
             else
                 echo "  No spectrum data"
             fi
@@ -657,9 +657,9 @@ data_query_menu() {
         echo
 
         # Show data summary
-        if [ -d "kraken-logs" ] && [ "$(ls -A kraken-logs 2>/dev/null)" ]; then
+        if [ -d "../data/kraken" ] && [ "$(ls -A ../data/kraken 2>/dev/null)" ]; then
             echo -e "${YELLOW}Data Summary:${NC}"
-            for file in kraken-logs/*.json; do
+            for file in ../data/kraken/*.json; do
                 if [ -f "$file" ]; then
                     local count=$(wc -l < "$file" 2>/dev/null || echo "0")
                     local type=$(basename "$file" | cut -d'-' -f2)
@@ -716,7 +716,7 @@ system_config_menu() {
 
         # Show current configuration
         echo -e "${YELLOW}Current Configuration:${NC}"
-        echo -e "  Data Directory: ${BLUE}kraken-logs/${NC}"
+        echo -e "  Data Directory: ${BLUE}../data/kraken/${NC}"
         echo -e "  Python Environment: ${BLUE}kraken_env/${NC}"
         echo -e "  Elasticsearch: ${BLUE}172.18.18.20:9200${NC}"
         echo -e "  Filebeat Config: ${BLUE}filebeat_kraken_simple.yml${NC}"
@@ -756,7 +756,7 @@ system_config_menu() {
                 ;;
             3)
                 echo -e "${YELLOW}Cleaning log directory...${NC}"
-                rm -f kraken-logs/*.json 2>/dev/null && echo -e "${GREEN}✓ Log directory cleaned${NC}" || echo -e "${RED}✗ Failed to clean logs${NC}"
+                rm -f ../data/kraken/*.json 2>/dev/null && echo -e "${GREEN}✓ Log directory cleaned${NC}" || echo -e "${RED}✗ Failed to clean logs${NC}"
                 echo -e "${CYAN}Press any key to continue...${NC}"
                 read -n 1 -s
                 ;;
@@ -791,15 +791,15 @@ show_latest_detections() {
     echo -e "${GREEN}═══ LATEST DETECTIONS ═══${NC}"
     echo
 
-    if [ -f "kraken-logs/kraken-doa-"*.json ]; then
+    if [ -f "../data/kraken/kraken-doa-"*.json ]; then
         echo -e "${BLUE}📍 Direction Finding (Last 5):${NC}"
-        tail -5 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"  • \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)° (confidence: \(.confidence*100 | floor)%)"' 2>/dev/null
+        tail -5 ../data/kraken/kraken-doa-*.json 2>/dev/null | jq -r '"  • \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)° (confidence: \(.confidence*100 | floor)%)"' 2>/dev/null
         echo
     fi
 
-    if [ -f "kraken-logs/kraken-radar-"*.json ]; then
+    if [ -f "../data/kraken/kraken-radar-"*.json ]; then
         echo -e "${PURPLE}🛡️ Passive Radar (Last 3):${NC}"
-        tail -3 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"  • Target at \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km, bearing \(.target.bearing_degrees | floor)°, velocity \(.target.velocity_ms | floor) m/s"' 2>/dev/null
+        tail -3 ../data/kraken/kraken-radar-*.json 2>/dev/null | jq -r '"  • Target at \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km, bearing \(.target.bearing_degrees | floor)°, velocity \(.target.velocity_ms | floor) m/s"' 2>/dev/null
         echo
     fi
 
@@ -868,8 +868,8 @@ export_data_summary() {
         echo "=================================="
         echo
 
-        if [ -d "kraken-logs" ]; then
-            for file in kraken-logs/*.json; do
+        if [ -d "../data/kraken" ]; then
+            for file in ../data/kraken/*.json; do
                 if [ -f "$file" ]; then
                     local count=$(wc -l < "$file" 2>/dev/null || echo "0")
                     local type=$(basename "$file" | cut -d'-' -f2)
@@ -880,14 +880,14 @@ export_data_summary() {
 
         echo
         echo "Latest Direction Finding:"
-        if [ -f "kraken-logs/kraken-doa-"*.json ]; then
-            tail -3 kraken-logs/kraken-doa-*.json 2>/dev/null | jq -r '"  \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)°"' 2>/dev/null
+        if [ -f "../data/kraken/kraken-doa-"*.json ]; then
+            tail -3 ../data/kraken/kraken-doa-*.json 2>/dev/null | jq -r '"  \(.frequency_hz/1e6 | floor).\(.frequency_hz/1e6*10 % 10 | floor) MHz at \(.bearing_degrees | floor)°"' 2>/dev/null
         fi
 
         echo
         echo "Latest Radar Targets:"
-        if [ -f "kraken-logs/kraken-radar-"*.json ]; then
-            tail -3 kraken-logs/kraken-radar-*.json 2>/dev/null | jq -r '"  \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km at \(.target.bearing_degrees | floor)°"' 2>/dev/null
+        if [ -f "../data/kraken/kraken-radar-"*.json ]; then
+            tail -3 ../data/kraken/kraken-radar-*.json 2>/dev/null | jq -r '"  \(.target.range_meters/1000 | floor).\(.target.range_meters/100 % 10 | floor) km at \(.target.bearing_degrees | floor)°"' 2>/dev/null
         fi
     } > "$summary_file"
 

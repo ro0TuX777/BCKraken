@@ -2,11 +2,11 @@
 Version=1.0
 Type=Application
 Name=KrakenSDR Control Center
-Comment=KrakenSDR Terminal Button Interface - RF Signal Analysis and Direction Finding
-Exec=qterminal -e /home/dragos/rf-kit/kraken-sdr/kraken_menu
+Comment=KrakenSDR Web Interface - RF Signal Analysis and Direction Finding
+Exec=/home/dragos/rf-kit/kraken-sdr/launch_kraken_web.sh
 Icon=/home/dragos/rf-kit/kraken-sdr/Kraken.png
 Terminal=false
 Categories=Network;Security;System;X-HamRadio;X-SDR;
-Keywords=kraken;sdr;radio;direction;finding;radar;spectrum;analysis;rf;signal;
+Keywords=kraken;sdr;radio;direction;finding;radar;spectrum;analysis;rf;signal;web;doa;
 StartupNotify=true
 StartupWMClass=krakensdr control center

@@ -16,10 +16,12 @@ from datetime import datetime, timezone
 
 class KrakenDataLogger:
     def __init__(self, log_dir=None):
-        # Auto-detect correct log directory
+        # Auto-detect correct log directory - USE UNIFIED DATA STRUCTURE
         if log_dir is None:
+            # Get rf-kit base directory (parent of kraken-sdr)
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            self.log_dir = os.path.join(script_dir, "kraken-logs")
+            base_dir = os.path.dirname(script_dir)
+            self.log_dir = os.path.join(base_dir, "data", "kraken")
         else:
             self.log_dir = log_dir
         self.ensure_log_directory()
@@ -434,7 +436,8 @@ class KrakenDataLogger:
             )
 
         # Sample spectrum data with VFO channels
-        frequencies = np.linspace(88e6, 108e6, 1000)
+        # EDIT THESE VALUES TO CHANGE SCAN RANGE:
+        frequencies = np.linspace(88e6, 108e6, 1000)  # 88-108 MHz (FM band) - Change for different range
         power_levels = -80 + 20 * np.random.random(1000)
         self.log_spectrum_data(frequencies, power_levels)
 
@@ -477,10 +480,8 @@ def main():
                        help='Interval in seconds for continuous mode (default: 60)')
     args = parser.parse_args()
 
-    # Get script directory and use it for log path
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    log_dir = os.path.join(script_dir, "kraken-logs")
-    logger = KrakenDataLogger(log_dir=log_dir)
+    # Use unified data structure - let __init__ handle it
+    logger = KrakenDataLogger()
 
     if args.generate_samples:
         logger.generate_sample_data()

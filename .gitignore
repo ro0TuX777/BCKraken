@@ -1,9 +1,22 @@
-# KrakenSDR Git Ignore File
+# BCKraken .gitignore
+# KrakenSDR RF Signal Analysis and Direction Finding Tool
+# Reference: Follow BCKismet pattern
 
-# Large binary files
+# ========================================
+# CRITICAL: Large Files (GitHub 100MB limit)
+# ========================================
 *.deb
 *.tar.gz
 *.zip
+*.so
+*.db
+*.sqlite
+*.sqlite3
+*_data.json
+*.pkl
+*.model
+*.pcap
+*.cap
 
 # Python virtual environment
 kraken_env/
@@ -13,14 +26,39 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Data files and logs
+# ========================================
+# KrakenSDR Specific Exclusions
+# ========================================
+# Log Files and Runtime Data
 kraken-logs/
 *.log
+*_logs/
+_share/logs/
+heimdall_daq_fw/Firmware/_logs/
+krakensdr_doa/_share/logs/
+
+# Data files and configuration
 *.json
 !filebeat_kraken_simple.yml
+captures/
+data/
+datasets/
+*.csv
+*.xlsx
 
-# Build directories
-build/
+# Build artifacts (but keep source)
+librtlsdr/build/
+kfr/build/
+heimdall_daq_fw/Firmware/_daq_core/*.o
+heimdall_daq_fw/Firmware/_daq_core/*.out
+heimdall_daq_fw/Firmware/_daq_core/librtlsdr.a
+heimdall_daq_fw/Firmware/_daq_core/rtl-sdr.h
+heimdall_daq_fw/Firmware/_daq_core/rtl-sdr_export.h
+
+# Node.js
+krakensdr_doa/_nodejs/node_modules/
+
+# Distribution directories
 dist/
 
 # IDE files
@@ -32,11 +70,6 @@ dist/
 # OS files
 .DS_Store
 Thumbs.db
-
-# Large external repositories (keep as untracked)
-heimdall_daq_fw/
-krakensdr_doa/
-librtlsdr/
 
 # Temporary files
 *.tmp
